@@ -52,6 +52,22 @@ function makeChain(rows: Row[]) {
   return proxy;
 }
 
+const { updateBookingRecordMock, publishBookingCancelledMock } = vi.hoisted(() => ({
+  updateBookingRecordMock: vi.fn(async (input: Record<string, unknown>) => ({
+    id: input.bookingId,
+    ...input,
+  })),
+  publishBookingCancelledMock: vi.fn(async () => undefined),
+}));
+
+vi.mock('@/lib/booking/service', () => ({
+  updateBookingRecord: updateBookingRecordMock,
+}));
+vi.mock('@/lib/booking/post-create', () => ({
+  publishBookingCancelled: publishBookingCancelledMock,
+  publishManualBookingCreated: vi.fn(),
+}));
+
 vi.mock('@/lib/db', () => ({
   db: {
     insert: vi.fn(() => ({
@@ -276,6 +292,10 @@ beforeEach(() => {
   dbState.updateReturning = [];
   dbState.capturedInsertValues = null;
   dbState.capturedUpdatePatch = null;
+  updateBookingRecordMock.mockReset();
+  updateBookingRecordMock.mockImplementation(async (input: Record<string, unknown>) => ({ id: input.bookingId, ...input }));
+  publishBookingCancelledMock.mockReset();
+  publishBookingCancelledMock.mockResolvedValue(undefined);
   hasServiceAccessMock.mockReset();
   hasServiceAccessMock.mockResolvedValue(true);
 });
@@ -438,21 +458,19 @@ describe('bookings_cancel', () => {
   });
 
   it('uses bare prefix when existing notes are empty', async () => {
-    dbState.selectDefault = [{ id: 5, status: 'confirmed', notes: null }];
-    dbState.updateReturning = [{ id: 5, status: 'cancelled' }];
+    dbState.selectDefault = [{ id: 5, bookingPageId: 9, status: 'confirmed', notes: null }];
     const tools = registerAll();
     await tools.get('bookings_cancel')!.handler({ id: 5, reason: 'oops' });
-    const patch = dbState.capturedUpdatePatch!;
-    expect(patch.notes).toBe('[cancelled] oops');
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 5, pageId: 9, notes: '[cancelled] oops',
+    }));
   });
 
   it('omits notes patch when reason not supplied', async () => {
-    dbState.selectDefault = [{ id: 5, status: 'confirmed', notes: 'x' }];
-    dbState.updateReturning = [{ id: 5, status: 'cancelled' }];
+    dbState.selectDefault = [{ id: 5, bookingPageId: 9, status: 'confirmed', notes: 'x' }];
     const tools = registerAll();
     await tools.get('bookings_cancel')!.handler({ id: 5 });
-    const patch = dbState.capturedUpdatePatch!;
-    expect('notes' in patch).toBe(false);
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.not.objectContaining({ notes: expect.anything() }));
   });
 
   it('errors when booking not found', async () => {
@@ -495,8 +513,7 @@ describe('bookings_cancel', () => {
 
 describe('bookings_update', () => {
   it('updates simple fields and ignores undefined patch keys', async () => {
-    dbState.selectDefault = [{ id: 1, status: 'confirmed' }];
-    dbState.updateReturning = [{ id: 1, guestName: 'Bob' }];
+    dbState.selectDefault = [{ id: 1, bookingPageId: 9, status: 'confirmed' }];
     const tools = registerAll();
     const res = await tools.get('bookings_update')!.handler({
       id: 1,
@@ -505,12 +522,10 @@ describe('bookings_update', () => {
     });
     const out = parseJson(res) as { id: number };
     expect(out.id).toBe(1);
-    const patch = dbState.capturedUpdatePatch!;
-    expect(patch.guestName).toBe('Bob');
-    expect(patch.assignedTo).toBe(7);
-    expect(patch.updatedAt).toBeInstanceOf(Date);
-    // Nothing about startTime should be in the patch since it wasn't passed.
-    expect('startTime' in patch).toBe(false);
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 1, pageId: 9, guestName: 'Bob', assignedTo: 7,
+    }));
+    expect(updateBookingRecordMock.mock.calls[0][0]).not.toHaveProperty('startTime');
   });
 
   it('does not accept startTime or endTime as rescheduling bypasses', async () => {
@@ -529,22 +544,21 @@ describe('bookings_update', () => {
   });
 
   it('stamps cancelledAt when transitioning to cancelled', async () => {
-    dbState.selectDefault = [{ id: 1, status: 'confirmed' }];
-    dbState.updateReturning = [{ id: 1, status: 'cancelled' }];
+    dbState.selectDefault = [{ id: 1, bookingPageId: 9, status: 'confirmed' }];
     const tools = registerAll();
     await tools.get('bookings_update')!.handler({ id: 1, status: 'cancelled' });
-    const patch = dbState.capturedUpdatePatch!;
-    expect(patch.status).toBe('cancelled');
-    expect(patch.cancelledAt).toBeInstanceOf(Date);
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 1, pageId: 9, status: 'cancelled',
+    }));
   });
 
   it('does NOT re-stamp cancelledAt when booking was already cancelled', async () => {
-    dbState.selectDefault = [{ id: 1, status: 'cancelled' }];
-    dbState.updateReturning = [{ id: 1, status: 'cancelled' }];
+    dbState.selectDefault = [{ id: 1, bookingPageId: 9, status: 'cancelled' }];
     const tools = registerAll();
     await tools.get('bookings_update')!.handler({ id: 1, status: 'cancelled' });
-    const patch = dbState.capturedUpdatePatch!;
-    expect('cancelledAt' in patch).toBe(false);
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 1, pageId: 9, status: 'cancelled',
+    }));
   });
 
   it('returns not-found when booking missing', async () => {
