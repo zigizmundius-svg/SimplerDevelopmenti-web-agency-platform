@@ -17,9 +17,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { bookings, bookingPages } from '@/lib/db/schema';
-import { eq, and, ne, lte, gte } from 'drizzle-orm';
-import { isSlotWithinAvailability } from '@/lib/booking/availability';
-import { checkSlotCapacity } from '@/lib/booking/capacity';
+import { eq, and } from 'drizzle-orm';
+import { rescheduleBookingRecord } from '@/lib/booking/service';
 import { updateCalendarEvent } from '@/lib/google-calendar';
 import { emitEvent } from '@/lib/automation';
 import { sendRescheduleEmail, loadBookingBrand } from '@/lib/email/booking-emails';
@@ -198,110 +197,32 @@ export async function POST(req: Request) {
     );
   }
 
-  // New slot must be in the future (with min notice)
-  const minNoticeTime = new Date(Date.now() + page.minNoticeMins * 60 * 1000);
-  if (newStart < minNoticeTime) {
+  // Duration is owned by the booking page; clients cannot alter it.
+  const expectedEnd = new Date(newStart.getTime() + page.duration * 60 * 1000);
+  if (newEnd.getTime() !== expectedEnd.getTime()) {
     return NextResponse.json(
-      { success: false, error: 'The new time slot is too soon' },
-      { status: 409 },
-    );
-  }
-
-  // Max advance check
-  const maxDate = new Date();
-  maxDate.setDate(maxDate.getDate() + page.maxAdvanceDays);
-  if (newStart > maxDate) {
-    return NextResponse.json(
-      { success: false, error: 'The new time slot is too far in advance' },
+      { success: false, error: 'newEndTime must match the booking duration' },
       { status: 400 },
     );
   }
 
-  // ── Availability check (mirrors book route) ────────────────────────────────
-
   const effectiveTz = timezone || booking.timezone || page.timezone;
-
-  if (!(await isSlotWithinAvailability(page, newStart, null))) {
-    return NextResponse.json(
-      { success: false, error: 'The new time slot is not within available hours' },
-      { status: 409 },
-    );
-  }
-
-  // ── Capacity / conflict check ──────────────────────────────────────────────
-  // For group bookings: validate seat capacity for the new slot excluding
-  // the current booking (which will move).  For 1:1: exclude self so we
-  // don't conflict with our own existing slot.
-
-  if (page.bookingType === 'group') {
-    const cap = await checkSlotCapacity(page.id, newStart, booking.groupSize ?? 1);
-    if (!cap.available) {
-      return NextResponse.json(
-        { success: false, error: `Only ${cap.remaining} seats remaining for that slot` },
-        { status: 409 },
-      );
-    }
-  } else if (page.maxGuests) {
-    // Capacity-mode individual — count seats already booked for the new slot.
-    const existing = await db
-      .select({ groupSize: bookings.groupSize })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.bookingPageId, page.id),
-          ne(bookings.status, 'cancelled'),
-          eq(bookings.startTime, newStart),
-        ),
-      );
-    const booked = existing.reduce((sum, b) => sum + (b.groupSize ?? 1), 0);
-    if (booked + (booking.groupSize ?? 1) > page.maxGuests) {
-      return NextResponse.json(
-        { success: false, error: `Only ${page.maxGuests - booked} spots remaining for that slot` },
-        { status: 409 },
-      );
-    }
-  } else {
-    // 1:1 conflict check with buffers, excluding the current booking
-    const bufferStart = new Date(newStart.getTime() - page.bufferBefore * 60 * 1000);
-    const bufferEnd = new Date(newEnd.getTime() + page.bufferAfter * 60 * 1000);
-
-    const conflicting = await db
-      .select({ id: bookings.id })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.bookingPageId, page.id),
-          ne(bookings.status, 'cancelled'),
-          ne(bookings.id, booking.id), // exclude self
-          lte(bookings.startTime, bufferEnd),
-          gte(bookings.endTime, bufferStart),
-        ),
-      )
-      .limit(1);
-
-    if (conflicting.length > 0) {
-      return NextResponse.json(
-        { success: false, error: 'The new time slot is no longer available' },
-        { status: 409 },
-      );
-    }
-  }
-
-  // ── Atomic update: preserve previous times, move to new ───────────────────
-
-  const [updated] = await db
-    .update(bookings)
-    .set({
-      previousStartTime: booking.startTime,
-      previousEndTime: booking.endTime,
-      startTime: newStart,
-      endTime: newEnd,
+  let updated: typeof bookings.$inferSelect;
+  try {
+    const result = await rescheduleBookingRecord({
+      bookingId: booking.id,
+      token,
+      newStartTime: newStart,
       timezone: effectiveTz,
-      rescheduleCount: (booking.rescheduleCount ?? 0) + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(bookings.id, booking.id))
-    .returning();
+    });
+    updated = result.updated;
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (status === 400 || status === 403 || status === 404 || status === 409) {
+      return NextResponse.json({ success: false, error: (err as Error).message }, { status });
+    }
+    throw err;
+  }
 
   // ── Best-effort Google Calendar update ─────────────────────────────────────
 

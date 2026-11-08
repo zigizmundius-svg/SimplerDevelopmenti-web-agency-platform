@@ -106,6 +106,8 @@ import { executeCampaignSend } from '@/lib/email/campaign-send';
 import { revoke as revokeGoogleToken } from '@/lib/google/oauth';
 import { getTenantWorkspaceCredentialsByClientId } from '@/lib/google/tenant-credentials';
 import { stageOrApply } from '../pending-changes';
+import { updateBookingRecord } from '@/lib/booking/service';
+import { publishBookingCancelled } from '@/lib/booking/post-create';
 import { BLOCKS_SCHEMA_REFERENCE } from '../blocks-schema';
 import { createApprovalLink, approvalEnvelope } from '../approval-links';
 import {
@@ -295,9 +297,12 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
         active: z.boolean().optional(),
       },
     },
-    async ({ id, ...rest }) => {
+    async ({ id, startTime, endTime, ...rest }) => {
       if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
       if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
+      if (startTime !== undefined || endTime !== undefined) {
+        return json({ error: 'Rescheduling through this integration is temporarily disabled until shared availability validation is available. Use the booking calendar.' });
+      }
       const [existing] = await db.select({ id: bookingPages.id, title: bookingPages.title })
         .from(bookingPages)
         .where(and(eq(bookingPages.id, id), eq(bookingPages.clientId, clientId)))
@@ -452,11 +457,9 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
     {
       title: 'Update booking',
       description:
-        'Edit booking fields (times, status, notes, assignee, check-in). Time changes DO NOT automatically push to Google Calendar or notify the guest.',
+        'Edit booking details (status, notes, assignee and guest contact fields). Rescheduling is temporarily disabled here because time changes must pass the shared availability and capacity checks.',
       inputSchema: {
         id: z.number(),
-        startTime: z.string().optional().describe('ISO datetime.'),
-        endTime: z.string().optional().describe('ISO datetime.'),
         status: z.enum(['confirmed', 'cancelled', 'completed', 'no_show']).optional(),
         notes: z.string().nullable().optional(),
         assignedTo: z.number().nullable().optional(),
@@ -465,24 +468,41 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
         guestPhone: z.string().nullable().optional(),
       },
     },
-    async ({ id, startTime, endTime, ...rest }) => {
+    async (args) => {
       if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
       if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
-      const [existing] = await db.select({ id: bookings.id, status: bookings.status })
-        .from(bookings)
+      const { id, ...rest } = args as typeof args & { startTime?: string; endTime?: string };
+      if (rest.startTime !== undefined || rest.endTime !== undefined) {
+        return json({ error: 'Rescheduling through this integration is temporarily disabled until shared availability validation is available. Use the booking calendar.' });
+      }
+      const [existing] = await db.select({
+        id: bookings.id,
+        bookingPageId: bookings.bookingPageId,
+        status: bookings.status,
+      }).from(bookings)
         .where(and(eq(bookings.id, id), eq(bookings.clientId, clientId))).limit(1);
       if (!existing) return json({ error: 'Booking not found' });
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
-      for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
-      if (startTime !== undefined) patch.startTime = new Date(startTime);
-      if (endTime !== undefined) patch.endTime = new Date(endTime);
-      if (rest.status === 'cancelled' && existing.status !== 'cancelled') {
-        patch.cancelledAt = new Date();
+      try {
+        const row = await updateBookingRecord({
+          bookingId: id,
+          pageId: existing.bookingPageId,
+          status: rest.status,
+          notes: rest.notes,
+          assignedTo: rest.assignedTo,
+          guestName: rest.guestName,
+          guestEmail: rest.guestEmail,
+          guestPhone: rest.guestPhone,
+        });
+        if (rest.status === 'cancelled' && existing.status !== 'cancelled') {
+          const [page] = await db.select().from(bookingPages)
+            .where(and(eq(bookingPages.id, existing.bookingPageId), eq(bookingPages.clientId, clientId))).limit(1);
+          if (page) await publishBookingCancelled({ page, booking: row, actorUserId: 0, source: 'mcp' });
+        }
+        revalidateForWrite('portal');
+        return json(row);
+      } catch (error) {
+        return json({ error: (error as Error).message });
       }
-      const [row] = await db.update(bookings).set(patch)
-        .where(eq(bookings.id, id)).returning();
-      revalidateForWrite('portal');
-      return json(row);
     }
   );
 

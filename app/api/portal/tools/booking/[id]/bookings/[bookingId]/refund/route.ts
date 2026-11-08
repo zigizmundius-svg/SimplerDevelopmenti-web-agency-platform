@@ -5,6 +5,8 @@ import { bookingPages, bookings } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getPortalClient } from '@/lib/portal-client';
 import { authorizePortal, isAuthError } from '@/lib/portal-auth';
+import { updateBookingRecord } from '@/lib/booking/service';
+import { publishBookingCancelled } from '@/lib/booking/post-create';
 
 export async function POST(
   req: Request,
@@ -53,14 +55,20 @@ export async function POST(
 
     const isFullRefund = !amount || amount >= booking.total;
 
-    await db.update(bookings)
-      .set({
-        paymentStatus: 'refunded',
-        status: isFullRefund ? 'cancelled' : booking.status,
-        cancelledAt: isFullRefund ? new Date() : booking.cancelledAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(bookings.id, booking.id));
+    const updated = await updateBookingRecord({
+      bookingId: booking.id,
+      pageId: page.id,
+      paymentStatus: 'refunded',
+      status: isFullRefund ? 'cancelled' : undefined,
+    });
+    if (isFullRefund && booking.status !== 'cancelled') {
+      await publishBookingCancelled({
+        page,
+        booking: updated,
+        actorUserId: Number.parseInt(session.user.id, 10) || 0,
+        source: 'portal',
+      });
+    }
 
     return NextResponse.json({
       success: true,

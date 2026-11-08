@@ -2,19 +2,16 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import {
   bookingPages, bookings, bookingAddOns, bookingSelectedAddOns,
-  bookingAttendees,
   discountCodes, giftCertificates, giftCertificateRedemptions,
   clientWebsites, storeSettings, products, productVariants,
 } from '@/lib/db/schema';
-import { eq, and, ne, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, ne, gte, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@/lib/email/booking-emails';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
 import { emitEvent } from '@/lib/automation';
-import { pickAssignee } from '@/lib/booking/assign';
-import { checkSlotCapacity } from '@/lib/booking/capacity';
-import { isSlotWithinAvailability } from '@/lib/booking/availability';
+import { createBookingRecord, resolveDefaultBookingAssignee, validateBookingSlot } from '@/lib/booking/service';
 import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 import { resolveApprovalContext } from '@/lib/mcp/approval-mode';
 
@@ -86,7 +83,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     return NextResponse.json({ success: false, message: 'Booking page not found' }, { status: 404 });
   }
 
-  const body = await req.json();
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ success: false, message: 'Invalid JSON body' }, { status: 400 });
+  }
   const {
     name, email, phone, startTime, timezone, answers,
     groupSize: rawGroupSize,
@@ -105,8 +105,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     ? Math.max(1, parseInt(String(rawSeats ?? attendees.length ?? 1)) || 1)
     : 1;
 
-  if (!name?.trim()) return NextResponse.json({ success: false, message: 'Name is required' }, { status: 400 });
-  if (!email?.trim()) return NextResponse.json({ success: false, message: 'Email is required' }, { status: 400 });
+  if (typeof name !== 'string' || !name.trim()) return NextResponse.json({ success: false, message: 'Name is required' }, { status: 400 });
+  if (typeof email !== 'string' || !email.trim()) return NextResponse.json({ success: false, message: 'Email is required' }, { status: 400 });
+  if (phone !== undefined && phone !== null && typeof phone !== 'string') return NextResponse.json({ success: false, message: 'Phone must be a string' }, { status: 400 });
+  if (timezone !== undefined && typeof timezone !== 'string') return NextResponse.json({ success: false, message: 'Timezone must be a string' }, { status: 400 });
   if (!startTime) return NextResponse.json({ success: false, message: 'Start time is required' }, { status: 400 });
 
   const slotStart = new Date(startTime);
@@ -117,81 +119,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const slotEnd = new Date(slotStart.getTime() + page.duration * 60 * 1000);
   const groupSize = Math.max(1, parseInt(String(rawGroupSize)) || 1);
 
-  // Check minNoticeMins
-  const now = new Date();
-  const minNoticeTime = new Date(now.getTime() + page.minNoticeMins * 60 * 1000);
-  if (slotStart < minNoticeTime) {
-    return NextResponse.json({ success: false, message: 'This time slot is no longer available' }, { status: 409 });
-  }
-
-  // Check maxAdvanceDays
-  const maxDate = new Date();
-  maxDate.setDate(maxDate.getDate() + page.maxAdvanceDays);
-  if (slotStart > maxDate) {
-    return NextResponse.json({ success: false, message: 'This date is too far in advance' }, { status: 400 });
-  }
-
-  // Enforce configured availability server-side (mirrors slots/route.ts).
-  const reqStaffId = staffId ? parseInt(String(staffId)) || null : null;
-  if (!(await isSlotWithinAvailability(page, slotStart, reqStaffId))) {
-    return NextResponse.json({ success: false, message: 'This time slot is no longer available' }, { status: 409 });
-  }
-
-  // Check capacity or conflicts
   if (isGroupBooking) {
-    // Group / class booking: validate against booking_attendees seat count.
     if (attendees.length > 0 && attendees.length !== seats) {
-      return NextResponse.json(
-        { success: false, message: 'Number of attendees must match seat count' },
-        { status: 400 },
-      );
+      return NextResponse.json({ success: false, message: 'Number of attendees must match seat count' }, { status: 400 });
     }
-    for (const a of attendees) {
-      if (!a?.name?.trim() || !a?.email?.trim()) {
-        return NextResponse.json(
-          { success: false, message: 'Each attendee needs a name and email' },
-          { status: 400 },
-        );
+    for (const attendee of attendees) {
+      if (typeof attendee?.name !== 'string' || !attendee.name.trim() || typeof attendee?.email !== 'string' || !attendee.email.trim()) {
+        return NextResponse.json({ success: false, message: 'Each attendee needs a name and email' }, { status: 400 });
       }
     }
-    const cap = await checkSlotCapacity(page.id, slotStart, seats);
-    if (!cap.available) {
-      return NextResponse.json(
-        { success: false, message: `Only ${cap.remaining} seats remaining for this slot` },
-        { status: 409 },
-      );
-    }
-  } else if (page.maxGuests) {
-    // Capacity mode (legacy maxGuests on individual bookings)
-    const existingForSlot = await db.select({ groupSize: bookings.groupSize }).from(bookings)
-      .where(and(
-        eq(bookings.bookingPageId, page.id),
-        ne(bookings.status, 'cancelled'),
-        eq(bookings.startTime, slotStart),
-      ));
-    const booked = existingForSlot.reduce((sum, b) => sum + (b.groupSize ?? 1), 0);
-    if (booked + groupSize > page.maxGuests) {
-      return NextResponse.json({ success: false, message: `Only ${page.maxGuests - booked} spots remaining` }, { status: 409 });
-    }
-  } else {
-    // 1:1 mode — conflict check with buffers
-    const bufferStart = new Date(slotStart.getTime() - page.bufferBefore * 60 * 1000);
-    const bufferEnd = new Date(slotEnd.getTime() + page.bufferAfter * 60 * 1000);
-
-    const conflicting = await db.select({ id: bookings.id }).from(bookings)
-      .where(and(
-        eq(bookings.bookingPageId, page.id),
-        ne(bookings.status, 'cancelled'),
-        lte(bookings.startTime, bufferEnd),
-        gte(bookings.endTime, bufferStart),
-      ))
-      .limit(1);
-
-    if (conflicting.length > 0) {
-      return NextResponse.json({ success: false, message: 'This time slot is no longer available' }, { status: 409 });
-    }
   }
-
   // ─── CALCULATE TOTAL ──────────────────────────────────────────────────────
 
   // Base price
@@ -302,97 +239,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const checkinCode = page.checkinEnabled ? generateCheckinCode() : null;
   const needsPayment = total > 0;
 
-  // Resolve staff assignment
-  // Precedence:
-  //   1. Customer-picked staffId (when allowStaffSelection is on).
-  //   2. assignmentMode in ('round_robin' | 'fewest_upcoming') — uses
-  //      lib/booking/assign.ts pickAssignee against the configured pool.
-  //   3. Legacy fallback to assignedMembers[] auto-distribute (preserves
-  //      pre-round-robin-mode behaviour for booking pages still on the
-  //      default 'fixed' mode that have multiple assigned members).
-  let assignedTo: number | null = null;
-  let autoAssignedUserId: number | null = null;
+  // Use the shared assignment resolver. A visitor-picked member is honored
+  // only when the page explicitly allows staff selection.
+  const hasVisitorStaffChoice = Boolean(staffId) && page.allowStaffSelection;
+  const visitorSelectedStaff = hasVisitorStaffChoice ? Number(staffId) : null;
+  if (hasVisitorStaffChoice && (!Number.isInteger(visitorSelectedStaff) || (visitorSelectedStaff ?? 0) <= 0)) {
+    return NextResponse.json({ success: false, message: 'Invalid staff selection' }, { status: 400 });
+  }
+  const assignedTo = hasVisitorStaffChoice
+    ? visitorSelectedStaff
+    : await resolveDefaultBookingAssignee(page, slotStart);
+  const autoAssignedUserId = visitorSelectedStaff
+    ? null
+    : (page.assignmentMode && page.assignmentMode !== 'fixed' ? assignedTo : null);
 
-  if (staffId && page.allowStaffSelection) {
-    assignedTo = parseInt(String(staffId)) || null;
-  } else if (page.assignmentMode && page.assignmentMode !== 'fixed') {
-    autoAssignedUserId = await pickAssignee(page.id, slotStart);
-    assignedTo = autoAssignedUserId;
-  } else if (!page.allowStaffSelection) {
-    const assignedMembers = (page.assignedMembers as number[]) || [];
-    if (assignedMembers.length === 1) {
-      assignedTo = assignedMembers[0];
-    } else if (assignedMembers.length > 1) {
-      // Legacy: pick the member with fewest upcoming bookings (simple load balancing)
-      const upcoming = await db.select({ assignedTo: bookings.assignedTo, count: sql`count(*)::int` })
-        .from(bookings)
-        .where(and(
-          eq(bookings.bookingPageId, page.id),
-          ne(bookings.status, 'cancelled'),
-          gte(bookings.startTime, new Date()),
-        ))
-        .groupBy(bookings.assignedTo);
-      const countMap = new Map(upcoming.map(r => [r.assignedTo, Number(r.count)]));
-      let minCount = Infinity;
-      for (const memberId of assignedMembers) {
-        const count = countMap.get(memberId) || 0;
-        if (count < minCount) { minCount = count; assignedTo = memberId; }
-      }
-    }
+  // Fast feedback for the visitor; createBookingRecord repeats this validation
+  // under the page lock immediately before the insert.
+  const slotValidation = await validateBookingSlot({
+    page,
+    startTime: slotStart,
+    requestedSeats: seats,
+    groupSize,
+    staffId: assignedTo,
+  });
+  if (!slotValidation.ok) {
+    return NextResponse.json({ success: false, message: slotValidation.message }, { status: slotValidation.status });
   }
 
-  // slotExclusive=true only for true 1:1 slots (not group, not maxGuests
-  // capacity mode) — those allow multiple bookings per slot. The DB partial
-  // unique index then makes the second of two concurrent 1:1 bookings fail with
-  // 23505, which we surface as 409 (the availability SELECT above can't win the
-  // race on its own).
-  const slotExclusive = !isGroupBooking && !page.maxGuests;
   let booking: typeof bookings.$inferSelect;
-  try {
-    const inserted = await db.insert(bookings).values({
-      bookingPageId: page.id,
-      clientId: page.clientId,
-      guestName: name.trim(),
-      guestEmail: email.trim(),
-      guestPhone: phone?.trim() || null,
-      startTime: slotStart,
-      endTime: slotEnd,
-      timezone: timezone || page.timezone,
-      answers: answers || null,
-      cancelToken,
-      rescheduleToken,
-      groupSize: isGroupBooking ? seats : groupSize,
-      slotExclusive,
-      subtotal,
-      discountTotal,
-      total,
-      discountCode: appliedDiscountCode,
-      giftCertificateCode: appliedGiftCertCode,
-      giftCertificateAmount: giftCertAmount,
-      checkinCode,
-      assignedTo,
-      assignedUserId: autoAssignedUserId,
-      paymentStatus: needsPayment ? 'pending' : 'free',
-      status: needsPayment ? 'confirmed' : 'confirmed', // confirmed even while pending payment — cancelled if payment fails
-    }).returning();
-    booking = inserted[0];
-  } catch (err) {
-    if ((err as { code?: string })?.code === '23505') {
-      return NextResponse.json(
-        { success: false, message: 'This time slot is no longer available' },
-        { status: 409 },
-      );
-    }
-    throw err;
-  }
-
-  // For group bookings, persist each attendee. When the request didn't pass
-  // an explicit attendees[] (legacy widget), fall back to creating a single
-  // attendee row from the primary guest fields so seat math stays correct.
-  if (isGroupBooking) {
-    const rows = attendees.length > 0
+  const attendeeRows = isGroupBooking
+    ? (attendees.length > 0
       ? attendees.map(a => ({
-          bookingId: booking.id,
           name: (a.name || '').trim(),
           email: (a.email || '').trim(),
           phone: a.phone?.trim() || null,
@@ -400,17 +277,52 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
           status: 'confirmed' as const,
         }))
       : Array.from({ length: seats }, (_, i) => ({
-          bookingId: booking.id,
           name: i === 0 ? name.trim() : `${name.trim()} (+${i})`,
           email: email.trim(),
           phone: phone?.trim() || null,
           notes: null,
           status: 'confirmed' as const,
-        }));
-
-    if (rows.length > 0) {
-      await db.insert(bookingAttendees).values(rows);
+        })))
+    : [];
+  try {
+    const created = await createBookingRecord({
+      page,
+      startTime: slotStart,
+      timezone: timezone || page.timezone,
+      staffId: assignedTo,
+      groupSize,
+      booking: {
+        guestName: name.trim(),
+        guestEmail: email.trim(),
+        guestPhone: phone?.trim() || null,
+        answers: answers || null,
+        cancelToken,
+        rescheduleToken,
+        groupSize: isGroupBooking ? seats : groupSize,
+        subtotal,
+        discountTotal,
+        total,
+        discountCode: appliedDiscountCode,
+        giftCertificateCode: appliedGiftCertCode,
+        giftCertificateAmount: giftCertAmount,
+        checkinCode,
+        assignedTo,
+        assignedUserId: autoAssignedUserId,
+        paymentStatus: needsPayment ? 'pending' : 'free',
+        status: 'confirmed',
+      },
+      attendees: attendeeRows,
+    });
+    booking = created.booking;
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    if (status === 400 || status === 409 || (err as { code?: string })?.code === '23505') {
+      return NextResponse.json(
+        { success: false, message: status ? (err as Error).message : 'This time slot is no longer available' },
+        { status: status || 409 },
+      );
     }
+    throw err;
   }
 
   emitEvent('booking.guest_booked', page.clientId, 0, {

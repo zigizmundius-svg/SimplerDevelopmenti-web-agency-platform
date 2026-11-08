@@ -513,18 +513,19 @@ describe('bookings_update', () => {
     expect('startTime' in patch).toBe(false);
   });
 
-  it('parses startTime + endTime ISO strings into Dates', async () => {
+  it('does not accept startTime or endTime as rescheduling bypasses', async () => {
     dbState.selectDefault = [{ id: 1, status: 'confirmed' }];
-    dbState.updateReturning = [{ id: 1 }];
     const tools = registerAll();
-    await tools.get('bookings_update')!.handler({
+    const tool = tools.get('bookings_update')!;
+    expect(tool.config.inputSchema).not.toHaveProperty('startTime');
+    expect(tool.config.inputSchema).not.toHaveProperty('endTime');
+    const result = await tool.handler({
       id: 1,
       startTime: '2026-06-01T10:00:00Z',
       endTime: '2026-06-01T11:00:00Z',
     });
-    const patch = dbState.capturedUpdatePatch!;
-    expect(patch.startTime).toBeInstanceOf(Date);
-    expect(patch.endTime).toBeInstanceOf(Date);
+    expect(parseJson(result)).toMatchObject({ error: expect.stringMatching(/temporarily disabled/i) });
+    expect(dbState.capturedUpdatePatch).toBeNull();
   });
 
   it('stamps cancelledAt when transitioning to cancelled', async () => {

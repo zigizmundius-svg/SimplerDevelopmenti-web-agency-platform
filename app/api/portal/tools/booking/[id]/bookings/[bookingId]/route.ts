@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { bookingPages, bookings } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { updateBookingRecord } from '@/lib/booking/service';
+import { publishBookingCancelled } from '@/lib/booking/post-create';
 import { getPortalClient } from '@/lib/portal-client';
 import { authorizePortal, isAuthError } from '@/lib/portal-auth';
 
@@ -35,22 +37,40 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   if (!booking) return NextResponse.json({ success: false, message: 'Booking not found' }, { status: 404 });
 
-  const { status, notes, assignedTo } = await req.json();
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
-
-  if (status !== undefined) {
-    updates.status = status;
-    if (status === 'cancelled') {
-      updates.cancelledAt = new Date();
-    }
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ success: false, message: 'Invalid JSON body' }, { status: 400 });
   }
-  if (notes !== undefined) updates.notes = notes;
-  if (assignedTo !== undefined) updates.assignedTo = assignedTo || null;
+  const { status, notes, assignedTo } = body;
+  const allowedStatuses = ['confirmed', 'cancelled', 'completed', 'no_show'];
 
-  const [updated] = await db.update(bookings)
-    .set(updates)
-    .where(eq(bookings.id, booking.id))
-    .returning();
+  if (status !== undefined && !allowedStatuses.includes(status)) {
+    return NextResponse.json({ success: false, message: 'Invalid booking status' }, { status: 400 });
+  }
+  if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+    return NextResponse.json({ success: false, message: 'Notes must be a string or null' }, { status: 400 });
+  }
+  if (assignedTo !== undefined && assignedTo !== null && (!Number.isInteger(assignedTo) || assignedTo <= 0)) {
+    return NextResponse.json({ success: false, message: 'Invalid assignee' }, { status: 400 });
+  }
 
-  return NextResponse.json({ success: true, data: updated });
+  try {
+    const updated = await updateBookingRecord({
+      bookingId: booking.id,
+      pageId,
+      status,
+      notes,
+      assignedTo,
+    });
+    if (status === 'cancelled' && booking.status !== 'cancelled') {
+      await publishBookingCancelled({ page, booking: updated, actorUserId: userId, source: 'portal' });
+    }
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error) {
+    const statusCode = (error as { status?: number })?.status;
+    if (statusCode === 400 || statusCode === 404 || statusCode === 409) {
+      return NextResponse.json({ success: false, message: (error as Error).message }, { status: statusCode });
+    }
+    throw error;
+  }
 }

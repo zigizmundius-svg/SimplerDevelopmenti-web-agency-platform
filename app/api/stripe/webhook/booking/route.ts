@@ -6,6 +6,7 @@ import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
 import { emitEvent } from '@/lib/automation';
+import { updateBookingRecord } from '@/lib/booking/service';
 
 export const runtime = 'nodejs';
 
@@ -81,13 +82,16 @@ export async function POST(req: Request) {
       const [booking] = await db.select().from(bookings)
         .where(eq(bookings.id, bookingId)).limit(1);
 
-      if (!booking || booking.paymentStatus === 'paid') {
+      if (!booking || booking.paymentStatus === 'paid' || booking.status === 'cancelled') {
         return NextResponse.json({ received: true }); // idempotent
       }
 
-      await db.update(bookings)
-        .set({ paymentStatus: 'paid', paidAt: new Date(), updatedAt: new Date() })
-        .where(eq(bookings.id, bookingId));
+      await updateBookingRecord({
+        bookingId: booking.id,
+        pageId: booking.bookingPageId,
+        paymentStatus: 'paid',
+        paidAt: new Date(),
+      });
 
       // Get booking page for conference/calendar settings
       const [page] = await db.select().from(bookingPages)
@@ -204,9 +208,20 @@ export async function POST(req: Request) {
         : null;
 
       if (bookingId) {
-        await db.update(bookings)
-          .set({ status: 'cancelled', paymentStatus: 'free', cancelledAt: new Date(), updatedAt: new Date() })
-          .where(eq(bookings.id, bookingId));
+        const [booking] = await db.select({
+          id: bookings.id,
+          bookingPageId: bookings.bookingPageId,
+          paymentStatus: bookings.paymentStatus,
+          status: bookings.status,
+        }).from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+        if (booking && booking.paymentStatus === 'pending' && booking.status === 'confirmed') {
+          await updateBookingRecord({
+            bookingId: booking.id,
+            pageId: booking.bookingPageId,
+            status: 'cancelled',
+            paymentStatus: 'free',
+          });
+        }
       }
     }
 
@@ -222,9 +237,11 @@ export async function POST(req: Request) {
         const [booking] = await db.select().from(bookings)
           .where(eq(bookings.stripePaymentIntentId, piId)).limit(1);
         if (booking) {
-          await db.update(bookings)
-            .set({ paymentStatus: 'refunded', updatedAt: new Date() })
-            .where(eq(bookings.id, booking.id));
+          await updateBookingRecord({
+            bookingId: booking.id,
+            pageId: booking.bookingPageId,
+            paymentStatus: 'refunded',
+          });
         }
       }
     }

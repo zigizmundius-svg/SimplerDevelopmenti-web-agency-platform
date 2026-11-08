@@ -155,6 +155,96 @@ vi.mock('@/lib/booking/availability', () => ({
   isSlotWithinAvailability: (...args: unknown[]) => isSlotWithinAvailability(...args),
 }));
 
+vi.mock('@/lib/booking/service', () => ({
+  resolveDefaultBookingAssignee: async (page: Row, startTime: Date) => {
+    if (page.allowStaffSelection) return null;
+    if (page.assignmentMode && page.assignmentMode !== 'fixed') {
+      return pickAssignee(Number(page.id), startTime);
+    }
+    const members = Array.isArray(page.assignedMembers) ? page.assignedMembers as number[] : [];
+    if (members.length === 1) return members[0];
+    if (members.length > 1) {
+      const upcoming = selectQueue.shift() ?? [];
+      const countMap = new Map(upcoming.map((row) => [row.assignedTo, Number(row.count)]));
+      return members.reduce((best, memberId) =>
+        (countMap.get(memberId) ?? 0) < (countMap.get(best) ?? 0) ? memberId : best,
+      members[0]);
+    }
+    return null;
+  },
+
+  validateBookingSlot: async (input: {
+    page: Row;
+    startTime: Date;
+    requestedSeats?: number;
+    groupSize?: number;
+    staffId?: number | null;
+  }) => {
+    const { page, startTime } = input;
+    const now = new Date();
+    if (startTime < new Date(now.getTime() + Number(page.minNoticeMins ?? 0) * 60_000)) {
+      return { ok: false, status: 409, message: 'This time slot is no longer available' };
+    }
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + Number(page.maxAdvanceDays ?? 365));
+    if (startTime > maxDate) {
+      return { ok: false, status: 400, message: 'This date is too far in advance' };
+    }
+    if (!(await isSlotWithinAvailability(page, startTime, input.staffId ?? null))) {
+      return { ok: false, status: 409, message: 'This time slot is no longer available' };
+    }
+    if (page.bookingType === 'group') {
+      const capacity = await checkSlotCapacity(Number(page.id), startTime, input.requestedSeats ?? 1);
+      if (!capacity.available) {
+        return { ok: false, status: 409, message: `Only ${capacity.remaining} seats remaining for this slot` };
+      }
+    } else if (page.maxGuests) {
+      const rows = selectQueue.shift() ?? [];
+      const booked = rows.reduce((sum, row) => sum + Number(row.groupSize ?? 1), 0);
+      const remaining = Number(page.maxGuests) - booked;
+      if (booked + Math.max(1, input.groupSize ?? 1) > Number(page.maxGuests)) {
+        return { ok: false, status: 409, message: `Only ${Math.max(0, remaining)} spots remaining` };
+      }
+    } else {
+      const conflicts = selectQueue.shift() ?? [];
+      if (conflicts.length > 0) {
+        return { ok: false, status: 409, message: 'This time slot is no longer available' };
+      }
+    }
+    return { ok: true, endTime: new Date(startTime.getTime() + Number(page.duration ?? 30) * 60_000) };
+  },
+  createBookingRecord: async (input: {
+    page: Row;
+    startTime: Date;
+    timezone?: string;
+    booking: Row;
+    attendees?: Row[];
+  }) => {
+    const endTime = new Date(input.startTime.getTime() + Number(input.page.duration ?? 30) * 60_000);
+    const values = {
+      ...input.booking,
+      bookingPageId: input.page.id,
+      clientId: input.page.clientId,
+      startTime: input.startTime,
+      endTime,
+      timezone: input.timezone || input.page.timezone,
+      slotExclusive: input.page.bookingType !== 'group' && !input.page.maxGuests,
+    };
+    insertCalls.push({ table: { __table: 'bookings' }, values });
+    const next = insertReturns.shift() ?? [];
+    if (next instanceof Error) throw next;
+    const booking = next[0] ?? { id: 1, ...values };
+    if (input.attendees?.length) {
+      insertCalls.push({
+        table: { __table: 'bookingAttendees' },
+        values: input.attendees.map((attendee) => ({ ...attendee, bookingId: booking.id })),
+      });
+    }
+    return { booking, endTime };
+  },
+}));
+
+
 // Stripe — route does `(await import('stripe')).default`
 const paymentIntentsCreate = vi.fn().mockResolvedValue({
   id: 'pi_test_123',
@@ -1015,13 +1105,13 @@ describe('POST — staff / assignee resolution', () => {
 
   it('picks the assignedMember with the fewest upcoming bookings (legacy load-balancer)', async () => {
     selectQueue.push([basePage({ assignedMembers: [1, 2, 3] })]);
-    selectQueue.push([]); // conflict
-    // upcoming counts grouped by assignedTo
+    // upcoming counts grouped by assignedTo, then the final slot-conflict query
     selectQueue.push([
       { assignedTo: 1, count: 5 },
       { assignedTo: 2, count: 1 },
       { assignedTo: 3, count: 3 },
     ]);
+    selectQueue.push([]);
     insertReturns.push([{ id: 1 }]);
     await POST(
       makeReq({ name: 'A', email: 'a@b.com', startTime: futureIso() }),

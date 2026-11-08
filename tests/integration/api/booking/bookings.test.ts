@@ -14,6 +14,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
+vi.mock('@/lib/booking/post-create', () => ({
+  publishManualBookingCreated: vi.fn().mockResolvedValue({ meetingLink: null }),
+  publishBookingCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 
 // Mock the dynamic stripe import used by the refund route
 const stripeRefundCreate = vi.fn();
@@ -43,7 +47,7 @@ async function enableBookingService(ctx: TenantCtx): Promise<void> {
   `;
 }
 
-async function seedPage(ctx: TenantCtx): Promise<{ id: number }> {
+async function seedPage(ctx: TenantCtx, opts: { price?: number } = {}): Promise<{ id: number }> {
   const sql = getTestSql();
   const slug = `pg-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   const [row] = await sql<{ id: number }[]>`
@@ -54,7 +58,7 @@ async function seedPage(ctx: TenantCtx): Promise<{ id: number }> {
       require_waiver_before_booking, allow_staff_selection,
       buffer_before, buffer_after, conference_type, google_calendar_sync, color
     ) VALUES (
-      ${ctx.client.id}, 'Page', ${slug}, 30, 60, 60, 'UTC', true, 0, false, false,
+      ${ctx.client.id}, 'Page', ${slug}, 30, 60, 60, 'UTC', true, ${opts.price ?? 0}, false, false,
       false, false, false, false, false, 0, 15, 'none', false, '#2563eb'
     ) RETURNING id
   `;
@@ -143,6 +147,90 @@ describe('GET /api/portal/tools/booking/[id]/bookings @booking @portal', () => {
   });
 });
 
+describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => {
+  let A: TenantCtx;
+  let B: TenantCtx;
+  beforeEach(async () => {
+    [A, B] = await Promise.all([
+      sessionForNewClientUser('bk-create-a'),
+      sessionForNewClientUser('bk-create-b'),
+    ]);
+    await Promise.all([enableBookingService(A), enableBookingService(B)]);
+  });
+
+  function nextAvailableWeekday(): string {
+    const date = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+    date.setUTCHours(10, 0, 0, 0);
+    while (date.getUTCDay() === 0 || date.getUTCDay() === 6) date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString();
+  }
+
+  it('creates a manual booking using the shared slot validator', async () => {
+    const page = await seedPage(A);
+    mockedAuth.mockResolvedValue(A.session);
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/route');
+    const res = await callHandler<{ success: boolean; data: { id: number; guestName: string } }>(
+      route as unknown as Record<string, unknown>, 'POST',
+      { params: { id: String(page.id) }, body: {
+        guestName: 'Manual Guest', guestEmail: 'manual@example.test', startTime: nextAvailableWeekday(),
+      } },
+    );
+    expect(res.status).toBe(201);
+    expect(res.data?.success).toBe(true);
+    expect(res.data?.data.guestName).toBe('Manual Guest');
+
+    const listRes = await callHandler<{ success: boolean; data: { guestName: string }[] }>(
+      route as unknown as Record<string, unknown>, 'GET',
+      { params: { id: String(page.id) } },
+    );
+    expect(listRes.status).toBe(200);
+    expect(listRes.data?.data.some((booking) => booking.guestName === 'Manual Guest')).toBe(true);
+  });
+
+  it('serializes simultaneous manual bookings for the same slot', async () => {
+    const page = await seedPage(A);
+    mockedAuth.mockResolvedValue(A.session);
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/route');
+    const payload = { params: { id: String(page.id) }, body: {
+      guestName: 'Concurrent Guest', guestEmail: 'race@example.test', startTime: nextAvailableWeekday(),
+    } };
+    const results = await Promise.all([
+      callHandler(route as unknown as Record<string, unknown>, 'POST', payload),
+      callHandler(route as unknown as Record<string, unknown>, 'POST', payload),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([201, 409]);
+  });
+  it('records offline payment as paid for a priced manual booking', async () => {
+    const page = await seedPage(A, { price: 2500 });
+    mockedAuth.mockResolvedValue(A.session);
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/route');
+    const res = await callHandler<{ success: boolean; data: { paymentStatus: string; paidAt: string | null } }>(
+      route as unknown as Record<string, unknown>, 'POST',
+      { params: { id: String(page.id) }, body: {
+        guestName: 'Offline Paid Guest',
+        guestEmail: 'paid@example.test',
+        startTime: nextAvailableWeekday(),
+        paidOffline: true,
+      } },
+    );
+    expect(res.status).toBe(201);
+    expect(res.data?.data.paymentStatus).toBe('paid');
+    expect(res.data?.data.paidAt).toBeTruthy();
+  });
+
+  it('does not allow manual booking against another tenant page', async () => {
+    const page = await seedPage(B);
+    mockedAuth.mockResolvedValue(A.session);
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/route');
+    const res = await callHandler(
+      route as unknown as Record<string, unknown>, 'POST',
+      { params: { id: String(page.id) }, body: {
+        guestName: 'Intruder', guestEmail: 'intruder@example.test', startTime: nextAvailableWeekday(),
+      } },
+    );
+    expect(res.status).toBe(404);
+  });
+});
 describe('PUT /api/portal/tools/booking/[id]/bookings/[bookingId] @booking @portal', () => {
   let A: TenantCtx;
   let B: TenantCtx;
@@ -190,6 +278,54 @@ describe('PUT /api/portal/tools/booking/[id]/bookings/[bookingId] @booking @port
     );
     expect(res.status).toBe(404);
     expect(res.data?.message).toMatch(/booking not found/i);
+  });
+
+  it('rejects unknown booking statuses', async () => {
+    const page = await seedPage(A);
+    const booking = await seedBooking({ pageId: page.id, clientId: A.client.id });
+    mockedAuth.mockResolvedValue(A.session);
+
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/[bookingId]/route');
+    const res = await callHandler<{ success: boolean; message: string }>(
+      route as unknown as Record<string, unknown>, 'PUT',
+      { params: { id: String(page.id), bookingId: String(booking.id) }, body: { status: 'anything' } },
+    );
+    expect(res.status).toBe(400);
+    expect(res.data?.message).toMatch(/invalid booking status/i);
+  });
+
+  it('rejects assigning a booking to a user outside the client team', async () => {
+    const page = await seedPage(A);
+    const booking = await seedBooking({ pageId: page.id, clientId: A.client.id });
+    mockedAuth.mockResolvedValue(A.session);
+
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/[bookingId]/route');
+    const res = await callHandler<{ success: boolean; message: string }>(
+      route as unknown as Record<string, unknown>, 'PUT',
+      { params: { id: String(page.id), bookingId: String(booking.id) }, body: { assignedTo: B.user.id } },
+    );
+    expect(res.status).toBe(400);
+    expect(res.data?.message).toMatch(/active member/i);
+  });
+
+  it('rejects reassignment when the active page member has no availability for the booking', async () => {
+    const page = await seedPage(A);
+    const booking = await seedBooking({ pageId: page.id, clientId: A.client.id });
+    const sql = getTestSql();
+    await sql`
+      INSERT INTO ${sql(TEST_SCHEMA)}.booking_page_members
+        (booking_page_id, user_id, active, availability)
+      VALUES (${page.id}, ${A.user.id}, true, '[]'::jsonb)
+    `;
+    mockedAuth.mockResolvedValue(A.session);
+
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/[bookingId]/route');
+    const res = await callHandler<{ success: boolean; message: string }>(
+      route as unknown as Record<string, unknown>, 'PUT',
+      { params: { id: String(page.id), bookingId: String(booking.id) }, body: { assignedTo: A.user.id } },
+    );
+    expect(res.status).toBe(409);
+    expect(res.data?.message).toMatch(/time slot is no longer available/i);
   });
 
   it('updates notes and stamps cancelled_at when status flips to cancelled', async () => {
