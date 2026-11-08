@@ -20,6 +20,7 @@ import { bookings, bookingPages } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { rescheduleBookingRecord } from '@/lib/booking/service';
 import { updateCalendarEvent } from '@/lib/google-calendar';
+import { updateZoomMeeting } from '@/lib/zoom';
 import { emitEvent } from '@/lib/automation';
 import { sendRescheduleEmail, loadBookingBrand } from '@/lib/email/booking-emails';
 import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
@@ -241,11 +242,21 @@ export async function POST(req: Request) {
     }
   }
 
-  // Zoom meetings are intentionally NOT touched here. lib/zoom.ts exposes
-  // createZoomMeeting and deleteZoomMeeting but no update — a
-  // conferenceType='zoom' booking keeps its original meeting time in Zoom
-  // after a reschedule even though bookings.startTime/endTime just moved.
-  // The join link stays the same; it just points at the old time.
+  // ── Best-effort Zoom meeting update ────────────────────────────────────────
+
+  if (page.conferenceType === 'zoom' && booking.meetingLink) {
+    const updatedZoom = await updateZoomMeeting({
+      clientId: booking.clientId,
+      meetingLink: booking.meetingLink,
+      startTime: newStart,
+      duration: page.duration,
+      timezone: effectiveTz,
+    });
+    if (!updatedZoom) {
+      console.warn('[reschedule] Zoom meeting update failed (best-effort)');
+    }
+  }
+
 
   // ── Emit automation event ──────────────────────────────────────────────────
 
