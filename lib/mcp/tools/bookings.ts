@@ -423,7 +423,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
     {
       title: 'Cancel booking / appointment',
       description:
-        'Cancel a booking. Marks status=cancelled and stamps cancelledAt. This does NOT auto-refund payment or remove Google Calendar events — handle those in the UI or via separate tools when they exist.',
+        'Cancel a booking. Marks status=cancelled, releases its slot, attempts to remove linked calendar/Zoom events, and sends cancellation notifications. This does NOT automatically refund payment.',
       inputSchema: {
         id: z.number(),
         reason: z.string().optional().describe('Internal note appended to booking.notes.'),
@@ -436,19 +436,24 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
         .where(and(eq(bookings.id, id), eq(bookings.clientId, clientId))).limit(1);
       if (!existing) return json({ error: 'Booking not found' });
       if (existing.status === 'cancelled') return json({ error: 'Booking already cancelled' });
-      const patch: Record<string, unknown> = {
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        updatedAt: new Date(),
-      };
-      if (reason) {
+      try {
         const prior = existing.notes?.trim();
-        patch.notes = prior ? `${prior}\n[cancelled] ${reason}` : `[cancelled] ${reason}`;
+        const row = await updateBookingRecord({
+          bookingId: id,
+          pageId: existing.bookingPageId,
+          status: 'cancelled',
+          notes: reason
+            ? (prior ? `${prior}\\n[cancelled] ${reason}` : `[cancelled] ${reason}`)
+            : undefined,
+        });
+        const [page] = await db.select().from(bookingPages)
+          .where(and(eq(bookingPages.id, existing.bookingPageId), eq(bookingPages.clientId, clientId))).limit(1);
+        if (page) await publishBookingCancelled({ page, booking: row, actorUserId: 0, source: 'mcp' });
+        revalidateForWrite('portal');
+        return json(row);
+      } catch (error) {
+        return json({ error: (error as Error).message });
       }
-      const [row] = await db.update(bookings).set(patch)
-        .where(eq(bookings.id, id)).returning();
-      revalidateForWrite('portal');
-      return json(row);
     }
   );
 
