@@ -427,7 +427,24 @@ describe('POST /api/portal/tools/booking/[id]/bookings/[bookingId]/refund @booki
     expect(row.cancelled_at).not.toBeNull();
   });
 
-  it('partial refund keeps booking status confirmed but marks paymentStatus refunded', async () => {
+  it.each([0, -1, 5000.5, 5001])('rejects invalid partial refund amount %s before calling Stripe', async (amount) => {
+    const page = await seedPage(A);
+    const booking = await seedBooking({
+      pageId: page.id, clientId: A.client.id,
+      paymentStatus: 'paid', total: 5000, stripePaymentIntentId: 'pi_test_invalid',
+    });
+    mockedAuth.mockResolvedValue(A.session);
+
+    const route = await import('@/app/api/portal/tools/booking/[id]/bookings/[bookingId]/refund/route');
+    const res = await callHandler(
+      route as unknown as Record<string, unknown>, 'POST',
+      { params: { id: String(page.id), bookingId: String(booking.id) }, body: { amount } },
+    );
+    expect(res.status).toBe(400);
+    expect(stripeRefundCreate).not.toHaveBeenCalled();
+  });
+
+  it('partial refund keeps booking status confirmed and paymentStatus paid', async () => {
     const page = await seedPage(A);
     const booking = await seedBooking({
       pageId: page.id, clientId: A.client.id,
@@ -449,7 +466,7 @@ describe('POST /api/portal/tools/booking/[id]/bookings/[bookingId]/refund @booki
       SELECT payment_status, status
       FROM ${sql(TEST_SCHEMA)}.bookings WHERE id = ${booking.id}
     `;
-    expect(row.payment_status).toBe('refunded');
+    expect(row.payment_status).toBe('paid');
     // partial refund should NOT cancel the booking
     expect(row.status).toBe('confirmed');
   });
