@@ -36,8 +36,20 @@ export async function POST(
     return NextResponse.json({ success: false, message: 'This booking has no payment to refund' }, { status: 400 });
   }
 
-  const body = await req.json();
-  const { amount } = body; // optional partial refund amount in cents
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ success: false, message: 'Invalid refund request' }, { status: 400 });
+  }
+  const amount = (body as { amount?: unknown }).amount; // optional partial refund amount in cents
+  const hasAmount = amount !== undefined && amount !== null;
+  if (hasAmount && (
+    typeof amount !== 'number'
+    || !Number.isSafeInteger(amount)
+    || amount <= 0
+    || amount > booking.total
+  )) {
+    return NextResponse.json({ success: false, message: 'Refund amount must be a positive whole number of cents not exceeding the booking total' }, { status: 400 });
+  }
 
   try {
     const Stripe = (await import('stripe')).default;
@@ -47,18 +59,18 @@ export async function POST(
       payment_intent: booking.stripePaymentIntentId,
     };
 
-    if (amount && amount > 0 && amount < booking.total) {
-      refundParams.amount = amount; // partial refund
-    }
+    if (hasAmount) refundParams.amount = amount as number;
 
     const refund = await stripe.refunds.create(refundParams);
 
-    const isFullRefund = !amount || amount >= booking.total;
+    // The schema has no partial-refund state. Keep partial refunds as paid;
+    // only a full refund cancels the booking and changes paymentStatus.
+    const isFullRefund = !hasAmount || amount === booking.total;
 
     const updated = await updateBookingRecord({
       bookingId: booking.id,
       pageId: page.id,
-      paymentStatus: 'refunded',
+      paymentStatus: isFullRefund ? 'refunded' : 'paid',
       status: isFullRefund ? 'cancelled' : undefined,
     });
     if (isFullRefund && booking.status !== 'cancelled') {
