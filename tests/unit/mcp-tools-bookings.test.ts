@@ -472,7 +472,7 @@ describe('bookings_cancel', () => {
     dbState.selectDefault = [{ id: 5, bookingPageId: 9, status: 'confirmed', notes: 'x' }];
     const tools = registerAll();
     await tools.get('bookings_cancel')!.handler({ id: 5 });
-    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.not.objectContaining({ notes: expect.anything() }));
+    expect(updateBookingRecordMock.mock.calls[0][0]).not.toHaveProperty('notes');
   });
 
   it('errors when booking not found', async () => {
