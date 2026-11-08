@@ -93,3 +93,16 @@ Avoid storing payment secrets or unnecessary personal data in audit snapshots. K
 - No production deployment, paid infrastructure, or real customer data.
 - No merge to `main`; work remains on `platform/ru-adaptation` and the existing Draft PR.
 - No claim of test success until workflows actually run and report success.
+
+
+## Additional queue defect found during the follow-up review
+
+The existing `drainInternalJobs()` explicitly reclaims an expired `running` lease without incrementing `attempt_count`. Its own comment notes that a handler which repeatedly kills its worker can therefore retry forever and never reach `MAX_ATTEMPTS` / `dead_letter`.
+
+This is a general queue reliability defect, not only a booking issue. Fix it before adding booking jobs:
+- lease expiry must consume an attempt (a worker that disappeared is a failed attempt);
+- the transition to `dead_letter` at the maximum must be atomic, so another cron tick cannot claim the row between a pending update and a later dead-letter update;
+- preserve the current rule that a normally running but slow job is not penalized before its lease actually expires;
+- add tests for expired lease below the threshold, lease expiry reaching the threshold, and two concurrent drainers racing to reclaim/claim the same row.
+
+The queue has no dedicated unit test file in `tests/unit` at this point; this state machine should gain one before it becomes the delivery mechanism for booking side effects.
