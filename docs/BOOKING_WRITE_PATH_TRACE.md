@@ -117,7 +117,7 @@ The domain layer must:
 - write actor/channel audit metadata;
 - enqueue notifications, calendar sync and automation only after commit, with idempotency.
 
-Route handlers should become thin adapters. Public booking, client portal and agency staff creation currently share the create service; public rescheduling shares the validator and lock. MCP time mutation remains disabled until a dedicated MCP reschedule command is routed through the service; MCP status/notes/assignee updates now use `updateBookingRecord`.
+Route handlers should become thin adapters. Public booking, client portal and agency staff creation currently share the create service; public rescheduling shares the validator and lock. MCP time mutation remains disabled until a dedicated MCP reschedule command is routed through the service; MCP status/notes/assignee updates and cancellation now use the shared booking service; cancellation also invokes the shared post-cancel integration handler.
 
 ## 9. Acceptance criteria
 
@@ -131,3 +131,12 @@ Route handlers should become thin adapters. Public booking, client portal and ag
 8. Cross-tenant negative tests cover public and portal create paths; reassignment also checks active membership and schedule.
 9. Manual client and agency bookings trigger guest/host email and calendar/conference integrations after commit; integrations remain best-effort and lack a retryable outbox.
 10. Client editor and agency booking console both expose manual appointment creation, including group seats.
+
+## 10. Follow-up hardening (branch changes)
+
+- Agency manual booking now persists the UI's offline-payment confirmation as `paymentStatus='paid'` with `paidAt`; otherwise paid services remain pending.
+- MCP cancellation no longer writes directly to the bookings table. It uses `updateBookingRecord`, preserves the cancellation reason, and invokes the shared cancellation side effects.
+- The shared slot validator now requires an explicitly assigned staff member to be an active `booking_page_members` entry as well as a member of the client team. This check is independent of date overrides.
+- Zoom meetings are updated best-effort when a public reschedule moves a Zoom-backed booking. Google Calendar remains best-effort as before.
+- Refund API rejects non-positive, fractional, unsafe, or over-total amounts. Since the current schema has no partial-refund status, partial refunds preserve `paymentStatus='paid'`; only a full refund sets `refunded` and cancels the booking. The Stripe `charge.refunded` webhook uses cumulative `amount_refunded` to distinguish partial from full refunds.
+- Regression tests were adjusted for shared MCP cancellation and partial/invalid refund behavior. These tests have not yet been executed; CI is still not reporting a run for the branch head.
