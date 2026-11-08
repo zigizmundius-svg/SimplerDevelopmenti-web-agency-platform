@@ -443,7 +443,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
           pageId: existing.bookingPageId,
           status: 'cancelled',
           notes: reason
-            ? (prior ? `${prior}\\n[cancelled] ${reason}` : `[cancelled] ${reason}`)
+            ? (prior ? `${prior}\n[cancelled] ${reason}` : `[cancelled] ${reason}`)
             : undefined,
         });
         const [page] = await db.select().from(bookingPages)
