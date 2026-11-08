@@ -444,17 +444,19 @@ describe('bookings_get', () => {
 // ── bookings_cancel ─────────────────────────────────────────────────────────
 
 describe('bookings_cancel', () => {
-  it('cancels a confirmed booking and appends reason to notes', async () => {
-    dbState.selectDefault = [{ id: 5, status: 'confirmed', notes: 'old note' }];
-    dbState.updateReturning = [{ id: 5, status: 'cancelled', notes: 'old note\n[cancelled] Reschedule' }];
+  it('cancels a confirmed booking through the shared service and appends reason to notes', async () => {
+    dbState.selectDefault = [{ id: 5, bookingPageId: 9, status: 'confirmed', notes: 'old note' }];
     const tools = registerAll();
     const res = await tools.get('bookings_cancel')!.handler({ id: 5, reason: 'Reschedule' });
     const out = parseJson(res) as { id: number; status: string };
     expect(out.status).toBe('cancelled');
-    const patch = dbState.capturedUpdatePatch!;
-    expect(patch.status).toBe('cancelled');
-    expect(patch.cancelledAt).toBeInstanceOf(Date);
-    expect(patch.notes).toBe('old note\n[cancelled] Reschedule');
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 5,
+      pageId: 9,
+      status: 'cancelled',
+      notes: 'old note\n[cancelled] Reschedule',
+    }));
+    expect(publishBookingCancelledMock).toHaveBeenCalled();
   });
 
   it('uses bare prefix when existing notes are empty', async () => {
