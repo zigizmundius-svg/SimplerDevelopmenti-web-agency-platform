@@ -80,6 +80,17 @@ export async function validateBookingSlot(input: {
     if (!teamMember) {
       return { ok: false, status: 409, message: 'Selected staff member is not part of this client team' };
     }
+    const [pageMember] = await queryDb.select({ userId: bookingPageMembers.userId })
+      .from(bookingPageMembers)
+      .where(and(
+        eq(bookingPageMembers.bookingPageId, page.id),
+        eq(bookingPageMembers.userId, input.staffId),
+        eq(bookingPageMembers.active, true),
+      ))
+      .limit(1);
+    if (!pageMember) {
+      return { ok: false, status: 409, message: 'Selected staff member is not active on this booking page' };
+    }
   }
   if (!(await isSlotWithinAvailability(page, startTime, input.staffId ?? null, queryDb))) {
     return { ok: false, status: 409, message: 'This time slot is no longer available' };
