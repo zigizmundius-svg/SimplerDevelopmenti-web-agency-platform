@@ -227,13 +227,17 @@ export async function POST(req: Request) {
 
     if (event.type === 'charge.refunded') {
       const charge = event.data.object as {
-        payment_intent: string;
+        payment_intent: string | null;
+        amount: number;
+        amount_refunded: number;
         metadata?: { type?: string; bookingId?: string };
       };
 
-      // Try to find booking by payment intent ID
+      // A charge.refunded event also fires for partial refunds. The current
+      // booking schema has no partial-refund state, so preserve paid until
+      // Stripe confirms that the cumulative refunded amount covers the charge.
       const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
-      if (piId) {
+      if (piId && charge.amount_refunded >= charge.amount) {
         const [booking] = await db.select().from(bookings)
           .where(eq(bookings.stripePaymentIntentId, piId)).limit(1);
         if (booking) {
