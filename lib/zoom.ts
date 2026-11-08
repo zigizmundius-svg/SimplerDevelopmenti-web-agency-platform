@@ -166,7 +166,7 @@ export async function updateZoomMeeting(opts: {
   duration: number;
   timezone: string;
 }): Promise<boolean> {
-  const match = opts.meetingLink.match(/\\/j\\/(\\d+)/);
+  const match = opts.meetingLink.match(/\/j\/(\d+)/);
   if (!match) return false;
 
   const accessToken = await getAuthedClient(opts.clientId);
