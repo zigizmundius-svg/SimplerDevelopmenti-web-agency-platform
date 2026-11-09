@@ -23,3 +23,18 @@ CREATE INDEX "booking_audit_logs_booking_idx"
 --> statement-breakpoint
 CREATE INDEX "booking_audit_logs_client_idx"
   ON "booking_audit_logs" USING btree ("client_id", "occurred_at");
+
+--> statement-breakpoint
+-- Audit history must outlive both the booking row and the tenant row.
+ALTER TABLE "booking_audit_logs"
+  DROP CONSTRAINT "booking_audit_logs_client_id_clients_id_fk";
+--> statement-breakpoint
+ALTER TABLE "booking_audit_logs"
+  DROP CONSTRAINT "booking_audit_logs_booking_id_bookings_id_fk";
+--> statement-breakpoint
+ALTER TABLE "booking_audit_logs"
+  ALTER COLUMN "booking_id" DROP NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "booking_audit_logs"
+  ADD CONSTRAINT "booking_audit_logs_booking_id_bookings_id_fk"
+  FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE SET NULL;
