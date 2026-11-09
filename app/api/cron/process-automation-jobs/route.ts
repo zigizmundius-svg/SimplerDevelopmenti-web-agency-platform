@@ -82,8 +82,9 @@ async function _GET(req: Request) {
       .update(automationJobs)
       .set({ status: 'running', nextRetryAt: leaseUntil })
       .where(and(eq(automationJobs.id, job.id), eq(automationJobs.status, 'pending')))
-      .returning({ id: automationJobs.id });
+      .returning({ id: automationJobs.id, attemptCount: automationJobs.attemptCount });
     if (claimed.length === 0) continue; // another worker took it
+    const claimedAttemptCount = claimed[0].attemptCount;
 
     const ownsLease = and(
       eq(automationJobs.id, job.id),
@@ -107,7 +108,7 @@ async function _GET(req: Request) {
       if (completed.length > 0) processed++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const attempts = job.attemptCount + 1;
+      const attempts = claimedAttemptCount + 1;
       if (attempts >= MAX_ATTEMPTS) {
         const updated = await db
           .update(automationJobs)
