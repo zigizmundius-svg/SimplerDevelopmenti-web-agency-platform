@@ -105,7 +105,7 @@ export async function createCalendarEvent(opts: {
       };
     }
 
-    let eventData;
+    let eventData: { id?: string | null; hangoutLink?: string | null };
     try {
       const created = await calendar.events.insert({
         calendarId: auth.calendarId,
@@ -203,6 +203,11 @@ export async function deleteCalendarEvent(
     });
     return true;
   } catch (err) {
+    const error = err as { code?: number; response?: { status?: number } };
+    const status = error.code ?? error.response?.status;
+    // Deleting an already-removed event is an idempotent success: the desired
+    // external state (no calendar event) already holds.
+    if (status === 404 || status === 410) return true;
     console.error('Failed to delete Google Calendar event:', err);
     return false;
   }
