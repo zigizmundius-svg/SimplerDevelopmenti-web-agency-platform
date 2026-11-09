@@ -187,3 +187,10 @@ exactly-once external delivery.
 ## Dispatch concurrency note
 
 The in-process dispatcher and retry cron must compete for the same atomic `pending -> running` claim. A dispatcher may complete or release a row only while it still owns the exact lease timestamp. Delivery remains at-least-once, so external handlers must be idempotent.
+
+
+## Calendar side-effect idempotency
+
+Google Calendar booking event creation now uses a deterministic event ID derived from the booking's database ID (base32hex, valid for Google Calendar event IDs). If Google creates the event but the application fails before saving `googleEventId`, a retry receives a conflict and reads the already-created event instead of inserting a duplicate. Google Meet conference creation also uses a stable request ID. Deleting an event that is already absent is treated as success.
+
+This closes the duplicate-create window for calendar events, but does not yet make all booking side effects durable. Calendar updates and booking emails remain best-effort at their current call sites and still need to move to the internal job queue with event-specific idempotency.
