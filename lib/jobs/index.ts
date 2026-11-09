@@ -145,7 +145,7 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
         ELSE NOW() + CASE WHEN ${internalJobs.attemptCount} + 1 = 1
           THEN INTERVAL '60 seconds' ELSE INTERVAL '300 seconds' END
       END`,
-      error: sql<string>`COALESCE(${internalJobs.error}, 'Worker lease expired before completion')`,
+      error: sql<string>`'Worker lease expired before completion'`,
     })
     .where(and(eq(internalJobs.status, 'running'), lt(internalJobs.nextRetryAt, now)))
     .returning({ status: internalJobs.status });
@@ -189,23 +189,25 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
       if (!handler) throw new Error(`No handler registered for job type '${job.type}'`);
       await handler((job.payload ?? {}) as Record<string, unknown>, db);
 
-      await db
+      const completed = await db
         .update(internalJobs)
         .set({ status: 'completed', processedAt: new Date(), nextRetryAt: null, error: null })
-        .where(ownsLease);
-      result.processed++;
+        .where(ownsLease)
+        .returning({ id: internalJobs.id });
+      if (completed.length > 0) result.processed++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const attempts = job.attemptCount + 1;
 
       if (attempts >= MAX_ATTEMPTS) {
-        await db
+        const updated = await db
           .update(internalJobs)
           .set({ status: 'dead_letter', attemptCount: attempts, error: message, nextRetryAt: null })
-          .where(ownsLease);
-        result.deadLettered++;
+          .where(ownsLease)
+          .returning({ id: internalJobs.id });
+        if (updated.length > 0) result.deadLettered++;
       } else {
-        await db
+        const updated = await db
           .update(internalJobs)
           .set({
             status: 'pending',
@@ -213,8 +215,9 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
             error: message,
             nextRetryAt: new Date(Date.now() + (BACKOFF_MS[attempts] ?? BACKOFF_MS[2])),
           })
-          .where(ownsLease);
-        result.failed++;
+          .where(ownsLease)
+          .returning({ id: internalJobs.id });
+        if (updated.length > 0) result.failed++;
       }
     }
   }
