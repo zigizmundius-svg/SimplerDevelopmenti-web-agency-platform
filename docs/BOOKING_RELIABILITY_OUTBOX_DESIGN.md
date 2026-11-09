@@ -1,6 +1,6 @@
 # Booking reliability and transactional outbox design
 
-Status: partially implemented on `platform/ru-adaptation`. Booking audit rows and automation event-journal rows are now written in the same shared booking transactions. External calendar, conference, and email delivery is still post-commit and not yet durable.
+Status: partially implemented on `platform/ru-adaptation`. Booking audit rows, automation journal rows, Google Calendar reconciliation jobs, and guest/host email jobs are now written in the shared booking transactions. Legacy Zoom operations remain best-effort.
 
 ## Scope
 
@@ -172,17 +172,16 @@ Integration assertions now check that portal creation and cancellation each
 produce exactly one matching automation journal row. These tests are
 committed but have NOT been executed.
 
-### Remaining reliability work
+### Booking effects queue — implemented, verification pending
 
-This is a transactional automation-event journal, not yet durable delivery for
-all booking integrations. Google Calendar, legacy Zoom pages, guest email, and host email
-still run in post-commit helpers or webhook routes. Their failures can still
-be logged and lost. New Zoom setup is deferred for the MVP; this legacy path is
-kept only to avoid breaking existing customer configurations. The next implementation must move those effects onto the
-existing PostgreSQL `internal_jobs` queue (or a narrowly scoped effect ledger
-linked to it), enqueue them atomically with the booking transition, and give
-each provider operation independent idempotency/reconciliation. Do not claim
-exactly-once external delivery.
+The existing PostgreSQL `internal_jobs` queue now handles:
+- `booking.calendar_sync`: transactionally enqueued by booking create, reschedule, cancellation, and payment-confirmation transitions. The worker reads the booking's current state and reconciles Google Calendar, so delayed jobs do not replay stale time snapshots. Deterministic Google event IDs protect create retries; missing/cancelled bookings are handled without restoring stale appointments.
+- `booking.email`: transactionally enqueued for guest and host separately on eligible booking confirmation, reschedule, and cancellation events. Payloads contain booking/client IDs and event timing only; guest contact data and tokens are loaded from the tenant-scoped booking row at delivery time. Separate recipient jobs prevent a failed host email from forcing a guest email to be resent.
+- Resend failures are propagated to the queue, including API responses that resolve with an `error` field instead of throwing. The queue retries with backoff and moves exhausted work to `dead_letter`.
+
+Public paid bookings deliberately do not create calendar events or send confirmation emails before Stripe confirms payment. The payment transition enqueues those effects. Existing fast-path calendar calls remain in place where they provide immediate feedback; the queued reconciliation is the durable recovery path. New Zoom setup remains out of MVP. Existing Zoom create/update/delete paths are retained as legacy best-effort behavior and are not yet durable.
+
+This is at-least-once delivery, not exactly-once. If Resend accepts a message and the worker dies before marking the job complete, a retry can send a duplicate because provider-side idempotency is not currently wired. Calendar creation is protected by the stable event ID; calendar updates are idempotent patches. Operator-facing dead-letter visibility and retry controls remain to be built.
 
 
 ## Dispatch concurrency note
@@ -194,4 +193,4 @@ The in-process dispatcher and retry cron must compete for the same atomic `pendi
 
 Google Calendar booking event creation now uses a deterministic event ID derived from the booking's database ID (base32hex, valid for Google Calendar event IDs). If Google creates the event but the application fails before saving `googleEventId`, a retry receives a conflict and reads the already-created event instead of inserting a duplicate. Google Meet conference creation also uses a stable request ID. Deleting an event that is already absent is treated as success.
 
-This closes the duplicate-create window for calendar events, but does not yet make all booking side effects durable. Calendar updates and booking emails remain best-effort at their current call sites and still need to move to the internal job queue with event-specific idempotency.
+Calendar create/update/delete operations are now reconciled by the `booking.calendar_sync` internal job. Booking emails are dispatched by separate `booking.email` jobs per recipient. Both job families are enqueued in the same transaction as the booking state change. These paths are implemented but remain unverified by typecheck, Vitest, and CI.
