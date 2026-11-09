@@ -145,6 +145,32 @@ async function writeBookingCalendarSyncJob(
   }).onConflictDoNothing({ target: internalJobs.dedupeKey });
 }
 
+/** Persist event-specific email deliveries in the booking transaction. */
+async function writeBookingEmailJobs(
+  tx: BookingTx,
+  booking: typeof bookings.$inferSelect,
+  kind: 'confirmation' | 'cancellation' | 'reschedule',
+  times?: { previousStartTime?: Date; startTime?: Date; endTime?: Date },
+): Promise<void> {
+  const revision = booking.updatedAt?.getTime() ?? booking.startTime.getTime();
+  for (const recipient of ['guest', 'host'] as const) {
+    await tx.insert(internalJobs).values({
+      clientId: booking.clientId,
+      type: 'booking.email',
+      payload: {
+        bookingId: booking.id,
+        clientId: booking.clientId,
+        kind,
+        recipient,
+        ...(times?.previousStartTime ? { previousStartTime: times.previousStartTime.toISOString() } : {}),
+        ...(times?.startTime ? { startTime: times.startTime.toISOString() } : {}),
+        ...(times?.endTime ? { endTime: times.endTime.toISOString() } : {}),
+      },
+      dedupeKey: `booking.email:${kind}:${booking.id}:${recipient}:${revision}`,
+    }).onConflictDoNothing({ target: internalJobs.dedupeKey });
+  }
+}
+
 /** Dispatch immediately after commit; the pending journal row is the crash-safe fallback. */
 function dispatchBookingAutomation(pending: PendingBookingAutomation | null): void {
   if (!pending) return;
@@ -348,6 +374,9 @@ export async function createBookingRecord(input: {
       actor: input.actor,
     });
     await writeBookingCalendarSyncJob(tx, input.page, booking);
+    if (booking.paymentStatus !== 'pending') {
+      await writeBookingEmailJobs(tx, booking, 'confirmation');
+    }
     return { booking, endTime: validation.endTime, automation };
   });
   dispatchBookingAutomation(result.automation);
@@ -466,6 +495,11 @@ export async function rescheduleBookingRecord(input: {
       actor: input.actor,
     });
     await writeBookingCalendarSyncJob(tx, page, updated);
+    await writeBookingEmailJobs(tx, updated, 'reschedule', {
+      previousStartTime: booking.startTime,
+      startTime: updated.startTime,
+      endTime: updated.endTime,
+    });
     return { booking, page, updated, automation };
   });
   dispatchBookingAutomation(result.automation);
@@ -578,6 +612,11 @@ export async function updateBookingRecord(input: {
     if (action === 'cancelled' || event === 'booking.confirmed') {
       await writeBookingCalendarSyncJob(tx, page, updated);
     }
+    if (action === 'cancelled') {
+      await writeBookingEmailJobs(tx, updated, 'cancellation');
+    } else if (event === 'booking.confirmed') {
+      await writeBookingEmailJobs(tx, updated, 'confirmation');
+    }
     return { booking: updated, automation };
   });
   dispatchBookingAutomation(result.automation);
@@ -645,7 +684,10 @@ export async function cancelBookingRecord(input: {
           actor: input.actor,
         })
       : null;
-    if (page) await writeBookingCalendarSyncJob(tx, page, updated);
+    if (page) {
+      await writeBookingCalendarSyncJob(tx, page, updated);
+      await writeBookingEmailJobs(tx, updated, 'cancellation');
+    }
     return { booking: updated, automation };
   });
   dispatchBookingAutomation(result.automation);
