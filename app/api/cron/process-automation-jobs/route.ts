@@ -3,7 +3,7 @@ import { withCronHealth } from '@/lib/cron-health';
 import { isAuthorizedCron } from '@/lib/cron-auth';
 import { db } from '@/lib/db';
 import { automationJobs } from '@/lib/db/schema';
-import { and, asc, eq, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { runHandlers } from '@/lib/automation/event-bus';
 // Side-effect import: registers the automation engine handlers in THIS process
 // so the cron can re-run a dropped event through the same handler set.
@@ -39,10 +39,21 @@ async function _GET(req: Request) {
   }
   const now = new Date();
 
-  // PASS 1: reclaim expired leases (a worker claimed then crashed).
+  // PASS 1: reclaim expired leases atomically. Expired workers consume an
+  // attempt; after MAX_ATTEMPTS the event is dead-lettered instead of being
+  // retried forever. A single UPDATE prevents two cron ticks racing this step.
   await db
     .update(automationJobs)
-    .set({ status: 'pending', nextRetryAt: null })
+    .set({
+      status: sql`CASE WHEN ${automationJobs.attemptCount} + 1 >= ${MAX_ATTEMPTS} THEN 'dead_letter' ELSE 'pending' END`,
+      attemptCount: sql<number>`${automationJobs.attemptCount} + 1`,
+      nextRetryAt: sql<Date | null>`CASE
+        WHEN ${automationJobs.attemptCount} + 1 >= ${MAX_ATTEMPTS} THEN NULL
+        ELSE NOW() + CASE WHEN ${automationJobs.attemptCount} + 1 = 1
+          THEN INTERVAL '60 seconds' ELSE INTERVAL '300 seconds' END
+      END`,
+      error: 'Worker lease expired before completion',
+    })
     .where(and(eq(automationJobs.status, 'running'), lt(automationJobs.nextRetryAt, now)));
 
   // PASS 2: claim due pending jobs past the grace window.
@@ -65,13 +76,20 @@ async function _GET(req: Request) {
   let deadLettered = 0;
 
   for (const job of due) {
-    // CAS claim → running with a lease.
+    // CAS claim → running with an exact lease ownership token.
+    const leaseUntil = new Date(Date.now() + LEASE_MS);
     const claimed = await db
       .update(automationJobs)
-      .set({ status: 'running', nextRetryAt: new Date(now.getTime() + LEASE_MS) })
+      .set({ status: 'running', nextRetryAt: leaseUntil })
       .where(and(eq(automationJobs.id, job.id), eq(automationJobs.status, 'pending')))
       .returning({ id: automationJobs.id });
     if (claimed.length === 0) continue; // another worker took it
+
+    const ownsLease = and(
+      eq(automationJobs.id, job.id),
+      eq(automationJobs.status, 'running'),
+      eq(automationJobs.nextRetryAt, leaseUntil),
+    );
 
     try {
       await runHandlers({
@@ -81,31 +99,34 @@ async function _GET(req: Request) {
         payload: (job.payload ?? {}) as Record<string, unknown>,
         timestamp: job.createdAt,
       });
-      await db
+      const completed = await db
         .update(automationJobs)
-        .set({ status: 'completed', processedAt: new Date(), nextRetryAt: null })
-        .where(eq(automationJobs.id, job.id));
-      processed++;
+        .set({ status: 'completed', processedAt: new Date(), nextRetryAt: null, error: null })
+        .where(ownsLease)
+        .returning({ id: automationJobs.id });
+      if (completed.length > 0) processed++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const attempts = job.attemptCount + 1;
       if (attempts >= MAX_ATTEMPTS) {
-        await db
+        const updated = await db
           .update(automationJobs)
           .set({ status: 'dead_letter', attemptCount: attempts, error: message, nextRetryAt: null })
-          .where(eq(automationJobs.id, job.id));
-        deadLettered++;
+          .where(ownsLease)
+          .returning({ id: automationJobs.id });
+        if (updated.length > 0) deadLettered++;
       } else {
-        await db
+        const updated = await db
           .update(automationJobs)
           .set({
             status: 'pending',
             attemptCount: attempts,
             error: message,
-            nextRetryAt: new Date(now.getTime() + (BACKOFF_MS[attempts] ?? BACKOFF_MS[2])),
+            nextRetryAt: new Date(Date.now() + (BACKOFF_MS[attempts] ?? BACKOFF_MS[2])),
           })
-          .where(eq(automationJobs.id, job.id));
-        failed++;
+          .where(ownsLease)
+          .returning({ id: automationJobs.id });
+        if (updated.length > 0) failed++;
       }
     }
   }
