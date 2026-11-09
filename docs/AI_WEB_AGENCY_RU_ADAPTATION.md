@@ -205,3 +205,16 @@ No paid cloud/VPS/database/bucket creation; no production deployment or DNS chan
 ## 12. Decision
 
 **Adopt SimplerDevelopment as the codebase foundation, not as an unmodified finished product.** Its portal, website/CMS, CRM, tenant model, PostgreSQL/Drizzle stack and booking primitives are substantial leverage. Blocking work remains: booking parity, full tenancy/security verification, Russian infrastructure and job scheduling, integration policy and a deliberately smaller MVP. Close those blockers before feature expansion.
+
+
+## 13. Zoom scope decision (MVP)
+
+Zoom is **deferred from the first commercial release**. It is not a required capability for the target Russian niches and must not block booking/calendar delivery.
+
+- New booking pages can select only no video call or Google Meet.
+- The portal displays an existing Zoom configuration as a disabled legacy option so it is not silently rewritten or lost.
+- The booking settings API rejects attempts to enable Zoom on pages that do not already use it. An unchanged legacy Zoom value remains saveable while the customer migrates the page.
+- Existing Zoom token rows and historical meeting links are retained; this adaptation does not revoke credentials or delete customer data.
+- Existing legacy Zoom pages continue through their current integration paths until a separate migration decision is made. Do not promise new Zoom setup or expand Zoom functionality in the MVP.
+- Before eventually removing the legacy integration, provide a migration path for existing pages and inspect all booking create/reschedule/cancel flows, meeting links, tokens and email/calendar descriptions.
+- Google Meet remains a separate optional provider and is not made mandatory by this decision.
