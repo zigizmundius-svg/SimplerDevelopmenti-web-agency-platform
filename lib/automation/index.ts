@@ -6,7 +6,7 @@ import { initSurveyNotifications } from './survey-notifications';
 initAutomationEngine();
 initSurveyNotifications();
 
-export { emitEvent, AUTOMATION_EVENTS, type AutomationEvent, type AutomationEventType } from './event-bus';
+export { emitEvent, dispatchJournaledEvent, AUTOMATION_EVENTS, type AutomationEvent, type AutomationEventType } from './event-bus';
 export { initAutomationEngine } from './engine';
 export { initSurveyNotifications } from './survey-notifications';
 export { parseAutomationDescription, type ParsedAutomation } from './nlp-parser';
