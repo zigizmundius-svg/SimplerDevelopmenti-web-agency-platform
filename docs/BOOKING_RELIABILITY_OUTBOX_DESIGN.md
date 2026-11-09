@@ -230,3 +230,23 @@ tenant boundaries.
 The queue integration suite also covers two drainers racing to claim one due
 job. Both may select the candidate, but only one can win the atomic
 `pending -> running` compare-and-set and consume an attempt.
+
+
+### Booking-page deletion and external calendar cleanup
+
+Deleting a booking page cascades its booking rows and booking audit rows. Before
+that cascade, the portal DELETE route now writes one tenant-owned
+`booking.calendar_delete` job for each booking with a saved Google event ID,
+inside the same database transaction as the page deletion. These queue rows are
+owned by the client rather than by the booking, so deleting the page does not
+delete the cleanup work. The worker uses the client's Google Calendar connection;
+404/410 is an idempotent success, while provider failures retry and eventually
+surface in the agency dead-letter monitor.
+
+This covers booking-page deletion while the client remains active. Deleting the
+entire client still cascades its queue rows and Google Calendar token; tenant
+offboarding therefore needs a separate ordered teardown policy (disconnect and
+clean up external resources before deleting the client). Booking audit history
+also currently cascades with its booking/client and is not an immutable,
+long-retention audit archive. Define retention/export requirements before
+production use.
