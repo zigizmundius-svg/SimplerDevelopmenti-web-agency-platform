@@ -326,6 +326,7 @@ export async function sendGuestConfirmation(data: BookingEmailData): Promise<voi
     });
   } catch (err) {
     console.error('Failed to send guest confirmation email:', err);
+    throw err;
   }
 }
 
@@ -397,6 +398,7 @@ export async function sendHostNotification(
     });
   } catch (err) {
     console.error('Failed to send host notification email:', err);
+    throw err;
   }
 }
 
@@ -446,6 +448,7 @@ export async function sendCancellationEmail(
     });
   } catch (err) {
     console.error('Failed to send cancellation email:', err);
+    throw err;
   }
 }
 
@@ -469,7 +472,7 @@ export async function sendRescheduleEmail(data: {
   meetingLink?: string | null;
   hostEmail?: string | null;
   brand?: BookingBrand | null;
-}): Promise<void> {
+}, recipient: 'guest' | 'host' | 'both' = 'both'): Promise<void> {
   const cancelUrl = `${BASE_URL}/book/cancel?token=${data.cancelToken}`;
   const formattedNew = formatDateTime(data.newStartTime, data.timezone);
   const formattedNewEnd = formatTime(data.newEndTime, data.timezone);
@@ -478,6 +481,7 @@ export async function sendRescheduleEmail(data: {
   const heading = data.brand?.textColor ?? '#111827';
   const fromBrandName = data.brand?.companyName ?? 'SimplerDevelopment';
 
+  if (recipient !== 'host') {
   const guestHtml = bookingEmailHtml(`
     <h1 style="margin:0 0 8px;font-size:24px;color:${heading};">Booking Rescheduled</h1>
     <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Your appointment has been moved to a new time.</p>
@@ -525,9 +529,12 @@ export async function sendRescheduleEmail(data: {
     });
   } catch (err) {
     console.error('Failed to send reschedule confirmation to guest:', err);
+      throw err;
   }
 
-  if (data.hostEmail) {
+  }
+
+  if (recipient !== 'guest' && data.hostEmail) {
     const hostHtml = bookingEmailHtml(`
       <h1 style="margin:0 0 8px;font-size:24px;color:${heading};">Booking Rescheduled</h1>
       <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">${esc(data.guestName)} has rescheduled their appointment.</p>
@@ -564,8 +571,26 @@ export async function sendRescheduleEmail(data: {
       });
     } catch (err) {
       console.error('Failed to send reschedule notification to host:', err);
+      throw err;
     }
   }
+}
+
+/** Send cancellation notice to the booking host. */
+export async function sendHostCancellationNotification(input: {
+  hostEmail: string;
+  guestName: string;
+  pageTitle: string;
+  startTime: Date;
+  timezone: string;
+}): Promise<void> {
+  const formattedStart = formatDateTime(input.startTime, input.timezone);
+  await resend.emails.send({
+    from: `SimplerDevelopment <${FROM_EMAIL}>`,
+    to: input.hostEmail,
+    subject: `Booking Cancelled: ${input.guestName} — ${input.pageTitle}`,
+    html: `<p><strong>${esc(input.guestName)}</strong> cancelled their ${esc(input.pageTitle)} appointment on ${formattedStart}.</p>`,
+  });
 }
 
 /**
