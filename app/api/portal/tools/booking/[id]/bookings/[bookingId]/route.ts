@@ -64,7 +64,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       actor: { actorType: 'user', actorId: userId, source: 'portal' },
     });
     if (status === 'cancelled' && booking.status !== 'cancelled') {
-      await publishBookingCancelled({ page, booking: updated, actorUserId: userId, source: 'portal' });
+      await publishBookingCancelled({ page, booking: updated });
     }
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
