@@ -108,3 +108,15 @@ The existing `drainInternalJobs()` reclaimed an expired `running` lease without 
 - Added `tests/unit/jobs.test.ts` for bounded lease recovery, dead-letter counting, and the no-reclaim case. These are focused unit tests with a stubbed Drizzle surface; they do not replace a real PostgreSQL concurrency/integration test.
 
 The implementation is committed but **not yet executed by Vitest, typecheck, or CI**. The next verification step is to run the new test and add a database-backed concurrent-drainer test before relying on this queue for booking effects.
+
+
+## PostgreSQL migration and concurrency coverage
+
+A second audit found that `lib/db/schema/jobs.ts` declared `internal_jobs`, but the only migration registered in `drizzle/meta/_journal.json` did not create it. A clean database built by replaying the migration set would therefore be missing the queue table.
+
+Implemented:
+- Added `drizzle/0001_internal_jobs.sql` with the table, tenant FK, unique dedupe key, and due-work index.
+- Registered the migration as journal entry 1.
+- Added `tests/integration/api/internal-jobs.test.ts`, which inserts expired leases into PostgreSQL and runs two drainers concurrently. It asserts exactly one retryable lease is reclaimed and exactly one exhausted lease is dead-lettered, with the expected attempt counts.
+
+This integration test has been committed but has **not yet run**. The CI workflow currently has no reported run for the branch; do not treat the test as verified until CI or a controlled local test database reports its result.
