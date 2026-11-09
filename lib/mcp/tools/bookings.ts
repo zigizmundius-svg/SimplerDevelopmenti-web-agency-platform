@@ -449,7 +449,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
         });
         const [page] = await db.select().from(bookingPages)
           .where(and(eq(bookingPages.id, existing.bookingPageId), eq(bookingPages.clientId, clientId))).limit(1);
-        if (page) await publishBookingCancelled({ page, booking: row, actorUserId: 0, source: 'mcp' });
+        if (page) await publishBookingCancelled({ page, booking: row });
         revalidateForWrite('portal');
         return json(row);
       } catch (error) {
@@ -503,7 +503,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
         if (rest.status === 'cancelled' && existing.status !== 'cancelled') {
           const [page] = await db.select().from(bookingPages)
             .where(and(eq(bookingPages.id, existing.bookingPageId), eq(bookingPages.clientId, clientId))).limit(1);
-          if (page) await publishBookingCancelled({ page, booking: row, actorUserId: 0, source: 'mcp' });
+          if (page) await publishBookingCancelled({ page, booking: row });
         }
         revalidateForWrite('portal');
         return json(row);
