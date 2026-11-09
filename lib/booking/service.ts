@@ -79,7 +79,10 @@ async function writeBookingAutomationEvent(
   },
 ): Promise<PendingBookingAutomation> {
   const { page, booking, actor } = input;
-  const source = actor?.source ?? 'system';
+  const channel = actor?.source ?? 'system';
+  // Preserve the legacy "manual" source consumed by existing automation rules,
+  // while exposing the precise channel separately for newer integrations.
+  const source = channel === 'portal' || channel === 'agency' ? 'manual' : channel;
   const payload: Record<string, unknown> = {
     bookingId: booking.id,
     bookingPageId: page.id,
@@ -95,6 +98,7 @@ async function writeBookingAutomationEvent(
     total: Number(booking.total ?? 0) / 100,
     paymentStatus: booking.paymentStatus,
     source,
+    channel,
   };
   if (booking.answers) payload.answers = booking.answers;
   if (input.beforeBooking) {
