@@ -444,8 +444,11 @@ export const bookings = pgTable('bookings', {
  */
 export const bookingAuditLogs = pgTable('booking_audit_logs', {
   id: serial('id').primaryKey(),
-  clientId: integer('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
-  bookingId: integer('booking_id').notNull().references(() => bookings.id, { onDelete: 'cascade' }),
+  // Keep the historical numeric tenant ID without a live FK: audit records
+  // must survive client offboarding and deletion.
+  clientId: integer('client_id').notNull(),
+  // Booking deletion preserves the event while releasing the live booking FK.
+  bookingId: integer('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
   actorType: varchar('actor_type', { length: 20 }).notNull(), // guest, user, system, webhook, mcp
   actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }),
   source: varchar('source', { length: 40 }).notNull(),
