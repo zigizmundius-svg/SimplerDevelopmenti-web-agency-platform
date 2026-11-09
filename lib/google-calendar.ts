@@ -156,6 +156,10 @@ export async function updateCalendarEvent(opts: {
   startTime: Date;
   endTime: Date;
   timezone: string;
+  title?: string;
+  guestName?: string;
+  guestEmail?: string;
+  description?: string;
 }): Promise<boolean> {
   const auth = await getAuthedClient(opts.clientId);
   if (!auth) return false;
@@ -175,6 +179,13 @@ export async function updateCalendarEvent(opts: {
           dateTime: opts.endTime.toISOString(),
           timeZone: opts.timezone,
         },
+        ...(opts.title && opts.guestName
+          ? { summary: `${opts.title} — ${opts.guestName}` }
+          : {}),
+        ...(opts.description !== undefined ? { description: opts.description } : {}),
+        ...(opts.guestEmail
+          ? { attendees: [{ email: opts.guestEmail, displayName: opts.guestName }] }
+          : {}),
       },
     });
     return true;
