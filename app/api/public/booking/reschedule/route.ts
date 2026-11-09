@@ -21,7 +21,6 @@ import { eq, and } from 'drizzle-orm';
 import { rescheduleBookingRecord } from '@/lib/booking/service';
 import { updateCalendarEvent } from '@/lib/google-calendar';
 import { updateZoomMeeting } from '@/lib/zoom';
-import { emitEvent } from '@/lib/automation';
 import { sendRescheduleEmail, loadBookingBrand } from '@/lib/email/booking-emails';
 import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 
@@ -260,21 +259,6 @@ export async function POST(req: Request) {
 
 
   // ── Emit automation event ──────────────────────────────────────────────────
-
-  emitEvent('booking.rescheduled', booking.clientId, 0, {
-    bookingId: booking.id,
-    bookingPageId: page.id,
-    pageTitle: page.title,
-    pageSlug: page.slug,
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    previousStartTime: booking.startTime,
-    previousEndTime: booking.endTime,
-    startTime: newStart,
-    endTime: newEnd,
-    timezone: effectiveTz,
-    rescheduleCount: updated.rescheduleCount,
-  });
 
   // ── Reschedule email (best-effort) ─────────────────────────────────────────
 
