@@ -32,7 +32,8 @@ export async function reconcileBookingCalendar(
   const eventId = booking.googleEventId || `b${booking.id.toString(32)}`;
 
   if (booking.status === 'cancelled' || (!page.googleCalendarSync && page.conferenceType !== 'google_meet')) {
-    if (!booking.googleEventId) return;
+    // Use the deterministic ID even when googleEventId was not persisted: the
+    // provider may have accepted the insert immediately before a DB failure.
     const deleted = await deleteCalendarEvent(booking.clientId, eventId);
     if (!deleted) throw new Error(`Google Calendar delete failed for booking ${booking.id}`);
     return;
