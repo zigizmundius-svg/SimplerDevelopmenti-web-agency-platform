@@ -373,8 +373,12 @@ export async function createBookingRecord(input: {
       booking,
       actor: input.actor,
     });
-    await writeBookingCalendarSyncJob(tx, input.page, booking);
-    if (booking.paymentStatus !== 'pending') {
+    // Public paid bookings stay off external calendars and email until Stripe
+    // confirms payment. Authenticated manual bookings preserve their existing
+    // behavior even when an operator records payment as pending.
+    const awaitingPublicPayment = input.actor?.source === 'public' && booking.paymentStatus === 'pending';
+    if (!awaitingPublicPayment) {
+      await writeBookingCalendarSyncJob(tx, input.page, booking);
       await writeBookingEmailJobs(tx, booking, 'confirmation');
     }
     return { booking, endTime: validation.endTime, automation };
