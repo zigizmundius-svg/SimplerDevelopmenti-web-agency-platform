@@ -179,6 +179,16 @@ describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => 
     expect(res.data?.success).toBe(true);
     expect(res.data?.data.guestName).toBe('Manual Guest');
 
+    const sql = getTestSql();
+    const auditRows = await sql<{ actor_type: string; source: string; action: string; after_state: Record<string, unknown> }[]>`
+      SELECT actor_type, source, action, after_state
+      FROM ${sql(TEST_SCHEMA)}.booking_audit_logs
+      WHERE booking_id = ${res.data!.data.id}
+    `;
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({ actor_type: 'user', source: 'portal', action: 'created' });
+    expect(auditRows[0].after_state).toMatchObject({ status: 'confirmed', paymentStatus: 'free' });
+
     const listRes = await callHandler<{ success: boolean; data: { guestName: string }[] }>(
       route as unknown as Record<string, unknown>, 'GET',
       { params: { id: String(page.id) } },
@@ -342,6 +352,22 @@ describe('PUT /api/portal/tools/booking/[id]/bookings/[bookingId] @booking @port
     expect(res.data?.data.notes).toBe('Customer no-show');
     expect(res.data?.data.status).toBe('cancelled');
     expect(res.data?.data.cancelledAt).toBeTruthy();
+
+    const sql = getTestSql();
+    const auditRows = await sql<{ actor_type: string; source: string; action: string; before_state: Record<string, unknown>; after_state: Record<string, unknown> }[]>`
+      SELECT actor_type, source, action, before_state, after_state
+      FROM ${sql(TEST_SCHEMA)}.booking_audit_logs
+      WHERE booking_id = ${booking.id}
+      ORDER BY id
+    `;
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      actor_type: 'user',
+      source: 'portal',
+      action: 'cancelled',
+      before_state: { status: 'confirmed' },
+      after_state: { status: 'cancelled' },
+    });
   });
 });
 
