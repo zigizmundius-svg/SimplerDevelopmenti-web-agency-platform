@@ -75,6 +75,12 @@ export async function reconcileBookingCalendar(
           startTime: booking.startTime,
           endTime: booking.endTime,
           timezone,
+          title: page.title,
+          guestName: booking.guestName,
+          guestEmail: booking.guestEmail,
+          description: booking.meetingLink?.includes('zoom.us')
+            ? `Zoom: ${booking.meetingLink}`
+            : `Booking with ${booking.guestName} (${booking.guestEmail})`,
         });
         if (!updated) throw new Error(`Google Calendar update failed for booking ${booking.id}`);
       } else {
