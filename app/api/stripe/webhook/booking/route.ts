@@ -5,7 +5,6 @@ import { eq } from 'drizzle-orm';
 import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@/lib/email/booking-emails';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
-import { emitEvent } from '@/lib/automation';
 import { updateBookingRecord } from '@/lib/booking/service';
 
 export const runtime = 'nodejs';
@@ -179,19 +178,6 @@ export async function POST(req: Request) {
         }
       }
 
-      emitEvent('booking.confirmed', page.clientId, 0, {
-        bookingId: booking.id,
-        bookingPageId: page.id,
-        pageTitle: page.title,
-        pageSlug: page.slug,
-        guestName: booking.guestName,
-        guestEmail: booking.guestEmail,
-        startTime: booking.startTime,
-        endTime: booking.endTime,
-        timezone: booking.timezone,
-        total: booking.total / 100, // dollars
-        paymentStatus: 'paid',
-      });
     }
 
     if (event.type === 'payment_intent.payment_failed') {
