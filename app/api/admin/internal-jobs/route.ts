@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { internalJobs } from '@/lib/db/schema';
@@ -36,14 +36,14 @@ export async function GET(req: Request) {
     createdAt: internalJobs.createdAt,
     processedAt: internalJobs.processedAt,
   }).from(internalJobs)
-    .where(status ? eq(internalJobs.status, status) : undefined)
+    .where(status ? eq(internalJobs.status, status) : sql`true`)
     .orderBy(desc(internalJobs.createdAt))
     .limit(150);
 
   const counts = await Promise.all(allowed.map(async (value) => {
-    const [row] = await db.select({ count: internalJobs.id }).from(internalJobs)
+    const [row] = await db.select({ count: count() }).from(internalJobs)
       .where(eq(internalJobs.status, value));
-    return [value, row ? Number(row.count) : 0] as const;
+    return [value, row?.count ?? 0] as const;
   }));
 
   return NextResponse.json({
