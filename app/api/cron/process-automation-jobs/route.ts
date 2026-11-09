@@ -21,12 +21,12 @@ export const runtime = 'nodejs';
  * giving at-least-once delivery + retries instead of the old fire-and-forget.
  *
  * Per tick:
- *  1. Reclaim leases — 'running' rows whose lease (nextRetryAt) expired = a
- *     worker crashed mid-run → back to 'pending'.
+ *  1. Reclaim expired leases atomically; crashed attempts count toward the
+ *     three-attempt cap and exhausted rows move to dead_letter.
  *  2. Claim due 'pending' rows older than GRACE_MS (so we never race the
  *     in-process dispatch still handling a fresh event), CAS pending→running
- *     with a lease, re-run handlers, mark completed; on failure apply backoff
- *     (1m/5m) and dead-letter after 3 attempts.
+ *     with a lease, re-run handlers, and only complete/retry while the exact
+ *     lease token is still owned.
  */
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS: Record<number, number> = { 1: 60_000, 2: 5 * 60_000 };
