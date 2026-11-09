@@ -8,8 +8,8 @@ type Booking = typeof bookings.$inferSelect;
 /**
  * Side effects for a booking created by an authenticated operator.
  * The database transaction has already committed before this function runs.
- * Each integration is best-effort: an email/calendar outage must not roll back
- * or make the operator believe the booking itself failed.
+ * Google Calendar/legacy conference setup is a fast path; durable calendar and
+ * email jobs are already persisted by createBookingRecord.
  */
 export async function publishManualBookingCreated(input: {
   page: BookingPage;
