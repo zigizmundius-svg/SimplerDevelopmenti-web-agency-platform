@@ -498,6 +498,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
           guestName: rest.guestName,
           guestEmail: rest.guestEmail,
           guestPhone: rest.guestPhone,
+          actor: { actorType: 'mcp', source: 'mcp' },
         });
         if (rest.status === 'cancelled' && existing.status !== 'cancelled') {
           const [page] = await db.select().from(bookingPages)
