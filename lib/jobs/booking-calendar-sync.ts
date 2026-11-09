@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db as defaultDb } from '@/lib/db';
 import { bookingPages, bookings } from '@/lib/db/schema';
 import { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from '@/lib/google-calendar';
@@ -13,7 +13,10 @@ async function loadBooking(db: Db, bookingId: number): Promise<BookingCalendarRo
   const [row] = await db.select({ booking: bookings, page: bookingPages })
     .from(bookings)
     .innerJoin(bookingPages, eq(bookings.bookingPageId, bookingPages.id))
-    .where(eq(bookings.id, bookingId))
+    .where(and(
+      eq(bookings.id, bookingId),
+      eq(bookings.clientId, bookingPages.clientId),
+    ))
     .limit(1);
   return row ?? null;
 }
