@@ -1,6 +1,7 @@
 import type { bookingPages, bookings } from '@/lib/db/schema';
 import { createCalendarEvent, deleteCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting, deleteZoomMeeting } from '@/lib/zoom';
+import { updateBookingRecord } from '@/lib/booking/service';
 
 type BookingPage = typeof bookingPages.$inferSelect;
 type Booking = typeof bookings.$inferSelect;
@@ -29,6 +30,13 @@ export async function publishManualBookingCreated(input: {
         duration: page.duration,
         timezone,
       });
+      if (meetingLink) {
+        await updateBookingRecord({
+          bookingId: booking.id,
+          pageId: page.id,
+          meetingLink,
+        }).catch((error) => console.warn('[booking] Could not persist legacy Zoom link:', error));
+      }
     }
 
     if (page.googleCalendarSync || page.conferenceType === 'google_meet') {
