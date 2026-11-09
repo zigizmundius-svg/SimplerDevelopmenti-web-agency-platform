@@ -72,6 +72,11 @@ export const JOB_HANDLERS: Record<
     const { reconcileBookingCalendar } = await import('@/lib/jobs/booking-calendar-sync');
     await reconcileBookingCalendar(payload, db);
   },
+
+  'booking.email': async (payload, db) => {
+    const { deliverBookingEmail } = await import('@/lib/jobs/booking-email');
+    await deliverBookingEmail(payload, db);
+  },
 };
 
 // ─── enqueue ─────────────────────────────────────────────────────────────────
