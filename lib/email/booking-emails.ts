@@ -6,6 +6,17 @@ import crypto from 'crypto';
 
 const BASE_URL = process.env.NEXTAUTH_URL || 'https://simplerdevelopment.com';
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'bookings@simplerdevelopment.com';
+/** Resend may resolve with an { error } result instead of throwing. Normalize
+ * both failure modes so the durable queue can retry rejected deliveries. */
+async function sendBookingEmail(
+  message: Parameters<typeof resend.emails.send>[0],
+): Promise<void> {
+  const result = await resend.emails.send(message);
+  if (result.error) {
+    throw new Error(result.error.message || 'Resend rejected the booking email');
+  }
+}
+
 
 /**
  * Brand snapshot threaded through the booking emails so confirmations,
@@ -311,7 +322,7 @@ export async function sendGuestConfirmation(data: BookingEmailData): Promise<voi
   const icsContent = generateIcs(data);
 
   try {
-    await resend.emails.send({
+    await sendBookingEmail({
       from: `Booking Confirmation <${FROM_EMAIL}>`,
       to: data.guestEmail,
       subject: `Confirmed: ${data.pageTitle}`,
@@ -383,7 +394,7 @@ export async function sendHostNotification(
   const icsContent = generateIcs({ ...data, hostEmail });
 
   try {
-    await resend.emails.send({
+    await sendBookingEmail({
       from: `${fromBrandName} <${FROM_EMAIL}>`,
       to: hostEmail,
       subject: `New Booking: ${data.guestName} — ${data.pageTitle}`,
@@ -440,7 +451,7 @@ export async function sendCancellationEmail(
   `, `Your ${pageTitle} appointment has been cancelled`, brand);
 
   try {
-    await resend.emails.send({
+    await sendBookingEmail({
       from: `Booking Update <${FROM_EMAIL}>`,
       to: guestEmail,
       subject: `Cancelled: ${pageTitle} — ${formattedStart}`,
@@ -521,7 +532,7 @@ export async function sendRescheduleEmail(data: {
   `, `Your ${data.pageTitle} appointment has been rescheduled to ${formattedNew}`, data.brand);
 
   try {
-    await resend.emails.send({
+    await sendBookingEmail({
       from: `${fromBrandName} <${FROM_EMAIL}>`,
       to: data.guestEmail,
       subject: `Rescheduled: ${data.pageTitle} — ${formattedNew}`,
@@ -563,7 +574,7 @@ export async function sendRescheduleEmail(data: {
     `, `${data.guestName} rescheduled their ${data.pageTitle} to ${formattedNew}`, data.brand);
 
     try {
-      await resend.emails.send({
+      await sendBookingEmail({
         from: `${fromBrandName} <${FROM_EMAIL}>`,
         to: data.hostEmail,
         subject: `Rescheduled: ${data.guestName} — ${data.pageTitle}`,
@@ -585,7 +596,7 @@ export async function sendHostCancellationNotification(input: {
   timezone: string;
 }): Promise<void> {
   const formattedStart = formatDateTime(input.startTime, input.timezone);
-  await resend.emails.send({
+  await sendBookingEmail({
     from: `SimplerDevelopment <${FROM_EMAIL}>`,
     to: input.hostEmail,
     subject: `Booking Cancelled: ${input.guestName} — ${input.pageTitle}`,
@@ -645,7 +656,7 @@ export async function sendBookingReminder(data: BookingEmailData): Promise<void>
   `, `Reminder: your ${data.pageTitle} appointment is ${formattedStart}`, data.brand);
 
   try {
-    await resend.emails.send({
+    await sendBookingEmail({
       from: `${fromBrandName} <${FROM_EMAIL}>`,
       to: data.guestEmail,
       subject: `Reminder: ${data.pageTitle} — ${formattedStart}`,
