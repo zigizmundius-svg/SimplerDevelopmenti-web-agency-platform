@@ -521,6 +521,7 @@ export async function updateBookingRecord(input: {
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string | null;
+  meetingLink?: string | null;
   paymentStatus?: BookingInsert['paymentStatus'];
   paidAt?: Date | null;
   actor?: BookingAuditContext;
@@ -585,6 +586,7 @@ export async function updateBookingRecord(input: {
     if (input.guestName !== undefined) updates.guestName = input.guestName;
     if (input.guestEmail !== undefined) updates.guestEmail = input.guestEmail;
     if (input.guestPhone !== undefined) updates.guestPhone = input.guestPhone;
+    if (input.meetingLink !== undefined) updates.meetingLink = input.meetingLink;
     if (input.paymentStatus !== undefined) updates.paymentStatus = input.paymentStatus;
     if (input.paidAt !== undefined) updates.paidAt = input.paidAt;
 
@@ -617,7 +619,8 @@ export async function updateBookingRecord(input: {
       && booking.paymentStatus === 'pending'
       && (input.actor?.source === 'public' || input.actor?.source === 'stripe')
       && !booking.googleEventId;
-    if ((action === 'cancelled' || event === 'booking.confirmed') && !cancelledBeforeExternalPayment) {
+    const meetingLinkChanged = input.meetingLink !== undefined && input.meetingLink !== booking.meetingLink;
+    if ((action === 'cancelled' || event === 'booking.confirmed' || meetingLinkChanged) && !cancelledBeforeExternalPayment) {
       await writeBookingCalendarSyncJob(tx, page, updated);
     }
     const unpaidPublicCancellation = action === 'cancelled'
