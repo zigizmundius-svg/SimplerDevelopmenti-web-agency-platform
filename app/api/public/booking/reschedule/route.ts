@@ -21,8 +21,6 @@ import { eq, and } from 'drizzle-orm';
 import { rescheduleBookingRecord } from '@/lib/booking/service';
 import { updateCalendarEvent } from '@/lib/google-calendar';
 import { updateZoomMeeting } from '@/lib/zoom';
-import { sendRescheduleEmail, loadBookingBrand } from '@/lib/email/booking-emails';
-import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 
 // ── GET ?token= ────────────────────────────────────────────────────────────────
 
@@ -260,32 +258,8 @@ export async function POST(req: Request) {
 
   // ── Emit automation event ──────────────────────────────────────────────────
 
-  // ── Reschedule email (best-effort) ─────────────────────────────────────────
+  // Guest/host reschedule emails are queued in the reschedule transaction.
 
-  const brand = await loadBookingBrand(page.id).catch(() => null);
-  const hostEmail = await resolveHostNotificationEmail(
-    booking.clientId,
-    booking.assignedTo,
-  ).catch(() => null);
-
-  sendRescheduleEmail({
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    pageTitle: page.title,
-    newStartTime: newStart,
-    newEndTime: newEnd,
-    previousStartTime: booking.startTime,
-    timezone: effectiveTz,
-    cancelToken: booking.cancelToken,
-    rescheduleToken: token,
-    bookingSlug: page.slug,
-    duration: page.duration,
-    meetingLink: booking.meetingLink,
-    hostEmail,
-    brand,
-  }).catch((err) => {
-    console.warn('[reschedule] Email send failed (best-effort):', err);
-  });
 
   return NextResponse.json({
     success: true,
