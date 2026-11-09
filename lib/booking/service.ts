@@ -129,6 +129,22 @@ async function writeBookingAutomationEvent(
   };
 }
 
+/** Persist a calendar reconciliation request in the same transaction as the booking mutation. */
+async function writeBookingCalendarSyncJob(
+  tx: BookingTx,
+  page: BookingPage,
+  booking: typeof bookings.$inferSelect,
+): Promise<void> {
+  if (!page.googleCalendarSync && page.conferenceType !== 'google_meet' && !booking.googleEventId) return;
+  const revision = booking.updatedAt?.getTime() ?? booking.startTime.getTime();
+  await tx.insert(internalJobs).values({
+    clientId: booking.clientId,
+    type: 'booking.calendar_sync',
+    payload: { bookingId: booking.id },
+    dedupeKey: `booking.calendar_sync:${booking.id}:${revision}`,
+  }).onConflictDoNothing({ target: internalJobs.dedupeKey });
+}
+
 /** Dispatch immediately after commit; the pending journal row is the crash-safe fallback. */
 function dispatchBookingAutomation(pending: PendingBookingAutomation | null): void {
   if (!pending) return;
@@ -331,6 +347,7 @@ export async function createBookingRecord(input: {
       booking,
       actor: input.actor,
     });
+    await writeBookingCalendarSyncJob(tx, input.page, booking);
     return { booking, endTime: validation.endTime, automation };
   });
   dispatchBookingAutomation(result.automation);
@@ -448,6 +465,7 @@ export async function rescheduleBookingRecord(input: {
       beforeBooking: booking,
       actor: input.actor,
     });
+    await writeBookingCalendarSyncJob(tx, page, updated);
     return { booking, page, updated, automation };
   });
   dispatchBookingAutomation(result.automation);
@@ -557,6 +575,9 @@ export async function updateBookingRecord(input: {
           actor: input.actor,
         })
       : null;
+    if (action === 'cancelled' || event === 'booking.confirmed') {
+      await writeBookingCalendarSyncJob(tx, page, updated);
+    }
     return { booking: updated, automation };
   });
   dispatchBookingAutomation(result.automation);
@@ -624,6 +645,7 @@ export async function cancelBookingRecord(input: {
           actor: input.actor,
         })
       : null;
+    if (page) await writeBookingCalendarSyncJob(tx, page, updated);
     return { booking: updated, automation };
   });
   dispatchBookingAutomation(result.automation);
