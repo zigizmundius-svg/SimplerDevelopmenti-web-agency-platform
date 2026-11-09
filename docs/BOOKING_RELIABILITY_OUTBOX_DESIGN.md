@@ -11,11 +11,11 @@ The next reliability pass covers booking creation, rescheduling, cancellation, p
 - `internal_jobs` is a durable PostgreSQL queue with a unique optional `dedupe_key`, attempt count, lease expiry, retry backoff, and dead-letter state.
 - `lib/jobs/index.ts` exposes `enqueueJob(params, db)`; importantly, the second argument accepts the caller's Drizzle database/transaction handle. A producer can therefore insert a job in the same transaction as its domain mutation.
 - `app/api/cron/process-internal-jobs/route.ts` drains the queue every minute. The worker uses a pending-to-running compare-and-set claim, lease recovery, bounded batches, and retries.
-- `internal_jobs` currently supports `pod.submit`, `email.campaign_send`, and `automation.delayed_action`.
+- `internal_jobs` supports `pod.submit`, `email.campaign_send`, `automation.delayed_action`, `booking.calendar_sync`, and `booking.email`.
 - `automation_jobs` is a separate automation-event journal. It is not a general-purpose outbox: it has no producer idempotency key and is not transactionally coupled to booking writes.
 - `emitEvent()` remains fire-and-forget for non-booking domains. Booking create/reschedule/cancel and payment-confirmation transitions now insert their `automation_jobs` journal row inside the same transaction as the booking mutation, then dispatch the already-journaled event after commit. The existing retry cron remains the crash-recovery path.
-- `lib/booking/post-create.ts` currently performs Zoom/Google Calendar setup, guest/host email and automation emission after the booking transaction. Most integrations are best-effort; a failure is logged, not durably retried.
-- Cancellation integrations are also invoked after the cancellation transaction and are best-effort.
+- `lib/booking/post-create.ts` retains immediate Google Calendar/legacy Zoom fast paths for manual bookings; transactional queue jobs provide calendar recovery and all booking email delivery.
+- Existing Zoom create/update/delete operations remain legacy best-effort paths and are not part of the durable queue.
 - `agent_action_log` records MCP/automation/assistant tool activity; it is not a complete actor/channel audit trail for human booking operations.
 
 ## Reliability gaps confirmed
@@ -183,6 +183,11 @@ Public paid bookings deliberately do not create calendar events or send confirma
 
 This is at-least-once delivery, not exactly-once. If Resend accepts a message and the worker dies before marking the job complete, a retry can send a duplicate because provider-side idempotency is not currently wired. Calendar creation is protected by the stable event ID; calendar updates are idempotent patches. Operator-facing dead-letter visibility and retry controls remain to be built.
 
+
+
+### Operator visibility — implemented, verification pending
+
+Agency staff can inspect the latest 150 internal jobs at `/admin/internal-jobs`, filter by state, see attempt counts, next retry/processed timestamps, and the last error. Dead-letter jobs can be manually returned to pending; the retry action resets the attempt counter and error state. The API is protected by the existing staff-role gate. The UI does not expose job payloads or guest contact data.
 
 ## Dispatch concurrency note
 
