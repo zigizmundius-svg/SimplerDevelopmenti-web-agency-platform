@@ -61,6 +61,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       status,
       notes,
       assignedTo,
+      actor: { actorType: 'user', actorId: userId, source: 'portal' },
     });
     if (status === 'cancelled' && booking.status !== 'cancelled') {
       await publishBookingCancelled({ page, booking: updated, actorUserId: userId, source: 'portal' });
