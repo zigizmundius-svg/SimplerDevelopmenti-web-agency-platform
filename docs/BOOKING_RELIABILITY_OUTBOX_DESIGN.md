@@ -175,9 +175,10 @@ committed but have NOT been executed.
 ### Remaining reliability work
 
 This is a transactional automation-event journal, not yet durable delivery for
-all booking integrations. Google Calendar, Zoom, guest email, and host email
+all booking integrations. Google Calendar, legacy Zoom pages, guest email, and host email
 still run in post-commit helpers or webhook routes. Their failures can still
-be logged and lost. The next implementation must move those effects onto the
+be logged and lost. New Zoom setup is deferred for the MVP; this legacy path is
+kept only to avoid breaking existing customer configurations. The next implementation must move those effects onto the
 existing PostgreSQL `internal_jobs` queue (or a narrowly scoped effect ledger
 linked to it), enqueue them atomically with the booking transition, and give
 each provider operation independent idempotency/reconciliation. Do not claim
@@ -186,7 +187,7 @@ exactly-once external delivery.
 
 ## Dispatch concurrency note
 
-The in-process dispatcher and retry cron must compete for the same atomic `pending -> running` claim. A dispatcher may complete or release a row only while it still owns the exact lease timestamp. Delivery remains at-least-once, so external handlers must be idempotent.
+The in-process dispatcher and retry cron must compete for the same atomic `pending -> running` claim. A dispatcher may complete or release a row only while it still owns the exact lease timestamp. The cron also applies the three-attempt cap to expired leases and uses the attempt count returned by the successful claim when calculating retry/dead-letter state. Delivery remains at-least-once, so external handlers must be idempotent.
 
 
 ## Calendar side-effect idempotency
