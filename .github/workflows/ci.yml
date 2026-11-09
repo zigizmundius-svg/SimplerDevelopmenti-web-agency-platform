@@ -1,5 +1,9 @@
 name: CI
 
+# CI only reads the repository; keep the default GITHUB_TOKEN least-privileged.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main, platform/ru-adaptation]
