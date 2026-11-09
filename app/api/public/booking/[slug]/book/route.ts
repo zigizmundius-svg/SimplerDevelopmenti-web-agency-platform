@@ -7,11 +7,9 @@ import {
 } from '@/lib/db/schema';
 import { eq, and, ne, gte, sql } from 'drizzle-orm';
 import crypto from 'crypto';
-import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@/lib/email/booking-emails';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
 import { createBookingRecord, resolveDefaultBookingAssignee, validateBookingSlot } from '@/lib/booking/service';
-import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 import { resolveApprovalContext } from '@/lib/mcp/approval-mode';
 
 interface AttendeeInput {
@@ -477,26 +475,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     }
   }
 
-  const emailData = {
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    pageTitle: page.title,
-    startTime: slotStart,
-    endTime: slotEnd,
-    timezone: bookingTimezone,
-    cancelToken,
-    bookingSlug: page.slug,
-    duration: page.duration,
-    meetingLink,
-    brand: await loadBookingBrand(page.id),
-  };
-
-  sendGuestConfirmation(emailData).catch(() => {});
-
-  (async () => {
-    const hostEmail = await resolveHostNotificationEmail(page.clientId, assignedTo);
-    if (hostEmail) sendHostNotification(hostEmail, emailData).catch(() => {});
-  })();
+  // Confirmation emails are queued transactionally by createBookingRecord.
 
   return NextResponse.json({
     success: true,
