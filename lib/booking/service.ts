@@ -1,11 +1,60 @@
 import { db } from '@/lib/db';
-import { bookingPages, bookings, bookingAttendees, bookingPageMembers, clientMembers } from '@/lib/db/schema';
+import { bookingPages, bookings, bookingAttendees, bookingPageMembers, clientMembers, bookingAuditLogs } from '@/lib/db/schema';
 import { and, eq, ne, lte, gte, sql } from 'drizzle-orm';
 import { isSlotWithinAvailability, type BookingQueryDb } from '@/lib/booking/availability';
 import { checkSlotCapacity } from '@/lib/booking/capacity';
 import { pickAssignee } from '@/lib/booking/assign';
 
 type BookingPage = typeof bookingPages.$inferSelect;
+
+export type BookingAuditContext = {
+  actorType: 'guest' | 'user' | 'system' | 'webhook' | 'mcp';
+  actorId?: number | null;
+  source: 'public' | 'portal' | 'agency' | 'mcp' | 'stripe' | 'system';
+  requestId?: string | null;
+};
+
+type BookingTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function bookingAuditSnapshot(booking: typeof bookings.$inferSelect): Record<string, unknown> {
+  // Deliberately excludes guest contact details, free-form notes, answers,
+  // tokens, and payment identifiers. The audit trail stores operational state.
+  return {
+    status: booking.status,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    timezone: booking.timezone,
+    assignedTo: booking.assignedTo,
+    paymentStatus: booking.paymentStatus,
+    total: booking.total,
+    groupSize: booking.groupSize,
+  };
+}
+
+async function writeBookingAudit(
+  tx: BookingTx,
+  input: {
+    clientId: number;
+    bookingId: number;
+    action: 'created' | 'rescheduled' | 'updated' | 'cancelled';
+    beforeState?: Record<string, unknown> | null;
+    afterState?: Record<string, unknown> | null;
+    actor?: BookingAuditContext;
+  },
+): Promise<void> {
+  const actor = input.actor ?? { actorType: 'system' as const, source: 'system' as const };
+  await tx.insert(bookingAuditLogs).values({
+    clientId: input.clientId,
+    bookingId: input.bookingId,
+    actorType: actor.actorType,
+    actorId: actor.actorId ?? null,
+    source: actor.source,
+    action: input.action,
+    beforeState: input.beforeState ?? null,
+    afterState: input.afterState ?? null,
+    requestId: actor.requestId ?? null,
+  });
+}
 
 /** Resolve the same default staff assignment used by public booking when an
  * operator leaves the assignee blank. Explicit staff selection is preserved. */
@@ -152,6 +201,7 @@ export async function createBookingRecord(input: {
   staffId?: number | null;
   groupSize?: number;
   timezone?: string;
+  actor?: BookingAuditContext;
 }): Promise<{ booking: typeof bookings.$inferSelect; endTime: Date }> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-page:${input.page.id}`}))`);
@@ -185,6 +235,13 @@ export async function createBookingRecord(input: {
         input.attendees.map((attendee) => ({ ...attendee, bookingId: booking.id })),
       );
     }
+    await writeBookingAudit(tx, {
+      clientId: booking.clientId,
+      bookingId: booking.id,
+      action: 'created',
+      afterState: bookingAuditSnapshot(booking),
+      actor: input.actor,
+    });
     return { booking, endTime: validation.endTime };
   });
 }
@@ -199,6 +256,7 @@ export async function rescheduleBookingRecord(input: {
   token: string;
   newStartTime: Date;
   timezone?: string;
+  actor?: BookingAuditContext;
 }): Promise<{
   booking: typeof bookings.$inferSelect;
   page: BookingPage;
@@ -284,6 +342,14 @@ export async function rescheduleBookingRecord(input: {
       error.status = 409;
       throw error;
     }
+    await writeBookingAudit(tx, {
+      clientId: updated.clientId,
+      bookingId: updated.id,
+      action: 'rescheduled',
+      beforeState: bookingAuditSnapshot(booking),
+      afterState: bookingAuditSnapshot(updated),
+      actor: input.actor,
+    });
     return { booking, page, updated };
   });
 }
@@ -301,6 +367,7 @@ export async function updateBookingRecord(input: {
   guestPhone?: string | null;
   paymentStatus?: BookingInsert['paymentStatus'];
   paidAt?: Date | null;
+  actor?: BookingAuditContext;
 }): Promise<typeof bookings.$inferSelect> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-page:${input.pageId}`}))`);
@@ -367,6 +434,17 @@ export async function updateBookingRecord(input: {
 
     const [updated] = await tx.update(bookings).set(updates)
       .where(eq(bookings.id, booking.id)).returning();
+    const action = updated.status === 'cancelled' && booking.status !== 'cancelled'
+      ? 'cancelled'
+      : 'updated';
+    await writeBookingAudit(tx, {
+      clientId: updated.clientId,
+      bookingId: updated.id,
+      action,
+      beforeState: bookingAuditSnapshot(booking),
+      afterState: bookingAuditSnapshot(updated),
+      actor: input.actor,
+    });
     return updated;
   });
 }
@@ -375,6 +453,7 @@ export async function updateBookingRecord(input: {
 export async function cancelBookingRecord(input: {
   token: string;
   rejectPast?: boolean;
+  actor?: BookingAuditContext;
 }): Promise<typeof bookings.$inferSelect> {
   const [ref] = await db.select({ id: bookings.id, bookingPageId: bookings.bookingPageId })
     .from(bookings).where(eq(bookings.cancelToken, input.token)).limit(1);
@@ -412,6 +491,14 @@ export async function cancelBookingRecord(input: {
       error.status = 409;
       throw error;
     }
+    await writeBookingAudit(tx, {
+      clientId: updated.clientId,
+      bookingId: updated.id,
+      action: 'cancelled',
+      beforeState: bookingAuditSnapshot(booking),
+      afterState: bookingAuditSnapshot(updated),
+      actor: input.actor,
+    });
     return updated;
   });
 }
