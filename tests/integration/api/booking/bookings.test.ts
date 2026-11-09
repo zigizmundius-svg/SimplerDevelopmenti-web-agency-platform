@@ -189,6 +189,22 @@ describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => 
     expect(auditRows[0]).toMatchObject({ actor_type: 'user', source: 'portal', action: 'created' });
     expect(auditRows[0].after_state).toMatchObject({ status: 'confirmed', paymentStatus: 'free' });
 
+    // The automation event must be committed with the booking, not emitted
+    // later from the route after the transaction has already completed.
+    const automationRows = await sql<{ event: string; payload: Record<string, unknown> }[]>`
+      SELECT event, payload
+      FROM ${sql(TEST_SCHEMA)}.automation_jobs
+      WHERE client_id = ${A.client.id}
+        AND event = 'booking.guest_booked'
+        AND payload->>'bookingId' = ${String(res.data!.data.id)}
+    `;
+    expect(automationRows).toHaveLength(1);
+    expect(automationRows[0].payload).toMatchObject({
+      bookingId: res.data!.data.id,
+      source: 'manual',
+      channel: 'portal',
+    });
+
     const listRes = await callHandler<{ success: boolean; data: { guestName: string }[] }>(
       route as unknown as Record<string, unknown>, 'GET',
       { params: { id: String(page.id) } },
@@ -367,6 +383,20 @@ describe('PUT /api/portal/tools/booking/[id]/bookings/[bookingId] @booking @port
       action: 'cancelled',
       before_state: { status: 'confirmed' },
       after_state: { status: 'cancelled' },
+    });
+
+    const automationRows = await sql<{ event: string; payload: Record<string, unknown> }[]>`
+      SELECT event, payload
+      FROM ${sql(TEST_SCHEMA)}.automation_jobs
+      WHERE client_id = ${A.client.id}
+        AND event = 'booking.cancelled'
+        AND payload->>'bookingId' = ${String(booking.id)}
+    `;
+    expect(automationRows).toHaveLength(1);
+    expect(automationRows[0].payload).toMatchObject({
+      bookingId: booking.id,
+      source: 'portal',
+      channel: 'portal',
     });
   });
 });
