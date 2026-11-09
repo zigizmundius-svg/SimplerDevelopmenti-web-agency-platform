@@ -145,9 +145,12 @@ export async function POST(req: Request) {
       }
 
       if (meetingLink) {
-        await db.update(bookings)
-          .set({ meetingLink })
-          .where(eq(bookings.id, bookingId));
+        await updateBookingRecord({
+          bookingId: booking.id,
+          pageId: booking.bookingPageId,
+          meetingLink,
+          actor: { actorType: 'webhook', source: 'stripe' },
+        });
       }
 
       // Confirmation emails are enqueued by updateBookingRecord in the payment transaction.
