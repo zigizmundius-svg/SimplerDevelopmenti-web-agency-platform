@@ -123,7 +123,6 @@ export async function POST(req: Request) {
     const postCreate = await publishManualBookingCreated({
       page,
       booking: created.booking,
-      actorUserId: Number.parseInt(String(session.user.id), 10) || 0,
     });
     return NextResponse.json({ success: true, data: { ...created.booking, meetingLink: postCreate.meetingLink } }, { status: 201 });
   } catch (error) {
