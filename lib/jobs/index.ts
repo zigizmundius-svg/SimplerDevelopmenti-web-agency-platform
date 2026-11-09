@@ -12,9 +12,9 @@
 // because emitEvent ALSO dispatches in-process and the cron must not race it.
 // Here the queue is the only dispatch path, so a job is claimable immediately.
 
-import { and, asc, eq, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db as defaultDb } from '@/lib/db';
-import { internalJobs, type InternalJobType } from '@/lib/db/schema';
+import { internalJobs, type InternalJobStatus, type InternalJobType } from '@/lib/db/schema';
 
 type Db = typeof defaultDb;
 
@@ -130,19 +130,28 @@ export interface DrainResult {
  */
 export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult> {
   const now = new Date();
+  const result: DrainResult = { processed: 0, failed: 0, deadLettered: 0 };
 
-  // PASS 1: reclaim expired leases — a worker claimed the row then died.
-  //
-  // ponytail: a reclaim does NOT count as an attempt, matching automation_jobs.
-  // Ceiling: a job that kills its worker every time (OOM, infinite loop) never
-  // reaches MAX_ATTEMPTS and retries forever at one per lease. Acceptable while
-  // handlers are single outbound HTTP calls. If a heavier handler lands here,
-  // bump attempt_count on reclaim too — the reason it isn't done now is that it
-  // would also penalise a legitimately slow job that outran its lease.
-  await db
+  // PASS 1: reclaim expired leases atomically. A worker that disappeared has
+  // consumed an attempt; the same UPDATE decides pending vs dead_letter so a
+  // concurrent cron tick cannot claim a row between those transitions.
+  const reclaimed = await db
     .update(internalJobs)
-    .set({ status: 'pending', nextRetryAt: null })
-    .where(and(eq(internalJobs.status, 'running'), lt(internalJobs.nextRetryAt, now)));
+    .set({
+      status: sql<InternalJobStatus>`CASE WHEN ${internalJobs.attemptCount} + 1 >= ${MAX_ATTEMPTS} THEN 'dead_letter' ELSE 'pending' END`,
+      attemptCount: sql<number>`${internalJobs.attemptCount} + 1`,
+      nextRetryAt: sql<Date | null>`CASE
+        WHEN ${internalJobs.attemptCount} + 1 >= ${MAX_ATTEMPTS} THEN NULL
+        ELSE NOW() + CASE WHEN ${internalJobs.attemptCount} + 1 = 1
+          THEN INTERVAL '60 seconds' ELSE INTERVAL '300 seconds' END
+      END`,
+      error: sql<string>`COALESCE(${internalJobs.error}, 'Worker lease expired before completion')`,
+    })
+    .where(and(eq(internalJobs.status, 'running'), lt(internalJobs.nextRetryAt, now)))
+    .returning({ status: internalJobs.status });
+
+  result.failed += reclaimed.filter((job) => job.status === 'pending').length;
+  result.deadLettered += reclaimed.filter((job) => job.status === 'dead_letter').length;
 
   // PASS 2: claim jobs that are pending and due.
   const due = await db
@@ -157,15 +166,23 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
     .orderBy(asc(internalJobs.createdAt))
     .limit(DRAIN_BATCH);
 
-  const result: DrainResult = { processed: 0, failed: 0, deadLettered: 0 };
-
   for (const job of due) {
+    // The exact lease timestamp is this worker's ownership token. If the lease
+    // expires and another drainer reclaims the row, this worker must not later
+    // overwrite the newer worker's state.
+    const leaseUntil = new Date(Date.now() + LEASE_MS);
     const claimed = await db
       .update(internalJobs)
-      .set({ status: 'running', nextRetryAt: new Date(Date.now() + LEASE_MS) })
+      .set({ status: 'running', nextRetryAt: leaseUntil })
       .where(and(eq(internalJobs.id, job.id), eq(internalJobs.status, 'pending')))
       .returning({ id: internalJobs.id });
     if (claimed.length === 0) continue; // another worker took it
+
+    const ownsLease = and(
+      eq(internalJobs.id, job.id),
+      eq(internalJobs.status, 'running'),
+      eq(internalJobs.nextRetryAt, leaseUntil),
+    );
 
     try {
       const handler = JOB_HANDLERS[job.type];
@@ -175,7 +192,7 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
       await db
         .update(internalJobs)
         .set({ status: 'completed', processedAt: new Date(), nextRetryAt: null, error: null })
-        .where(eq(internalJobs.id, job.id));
+        .where(ownsLease);
       result.processed++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -185,7 +202,7 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
         await db
           .update(internalJobs)
           .set({ status: 'dead_letter', attemptCount: attempts, error: message, nextRetryAt: null })
-          .where(eq(internalJobs.id, job.id));
+          .where(ownsLease);
         result.deadLettered++;
       } else {
         await db
@@ -196,7 +213,7 @@ export async function drainInternalJobs(db: Db = defaultDb): Promise<DrainResult
             error: message,
             nextRetryAt: new Date(Date.now() + (BACKOFF_MS[attempts] ?? BACKOFF_MS[2])),
           })
-          .where(eq(internalJobs.id, job.id));
+          .where(ownsLease);
         result.failed++;
       }
     }
