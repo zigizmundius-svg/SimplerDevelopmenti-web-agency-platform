@@ -73,6 +73,11 @@ export const JOB_HANDLERS: Record<
     await reconcileBookingCalendar(payload, db);
   },
 
+  'booking.calendar_delete': async (payload) => {
+    const { deleteBookingCalendarEvent } = await import('@/lib/jobs/booking-calendar-sync');
+    await deleteBookingCalendarEvent(payload);
+  },
+
   'booking.email': async (payload, db) => {
     const { deliverBookingEmail } = await import('@/lib/jobs/booking-email');
     await deliverBookingEmail(payload, db);
