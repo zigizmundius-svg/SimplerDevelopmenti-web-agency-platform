@@ -10,7 +10,6 @@ import crypto from 'crypto';
 import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@/lib/email/booking-emails';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
-import { emitEvent } from '@/lib/automation';
 import { createBookingRecord, resolveDefaultBookingAssignee, validateBookingSlot } from '@/lib/booking/service';
 import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 import { resolveApprovalContext } from '@/lib/mcp/approval-mode';
@@ -325,23 +324,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     }
     throw err;
   }
-
-  emitEvent('booking.guest_booked', page.clientId, 0, {
-    bookingId: booking.id,
-    bookingPageId: page.id,
-    pageTitle: page.title,
-    pageSlug: page.slug,
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    guestPhone: booking.guestPhone,
-    startTime: booking.startTime,
-    endTime: booking.endTime,
-    timezone: booking.timezone,
-    groupSize: booking.groupSize,
-    total: total / 100, // dollars (matches create_crm_deal value contract)
-    paymentStatus: needsPayment ? 'pending' : 'free',
-    answers: booking.answers,
-  });
 
   // Save selected add-ons
   if (addOnDetails.length > 0) {
