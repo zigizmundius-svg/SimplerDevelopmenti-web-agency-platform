@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bookingPages, bookings, bookingAttendees, bookingPageMembers, clientMembers, bookingAuditLogs, automationJobs } from '@/lib/db/schema';
+import { bookingPages, bookings, bookingAttendees, bookingPageMembers, clientMembers, bookingAuditLogs, automationJobs, internalJobs } from '@/lib/db/schema';
 import { and, eq, ne, lte, gte, sql } from 'drizzle-orm';
 import { isSlotWithinAvailability, type BookingQueryDb } from '@/lib/booking/availability';
 import { checkSlotCapacity } from '@/lib/booking/capacity';
