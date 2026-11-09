@@ -12,7 +12,7 @@ vi.mock('@/lib/google-calendar', () => ({
   deleteCalendarEvent: calendar.remove,
 }));
 
-import { reconcileBookingCalendar } from '@/lib/jobs/booking-calendar-sync';
+import { deleteBookingCalendarEvent, reconcileBookingCalendar } from '@/lib/jobs/booking-calendar-sync';
 
 function row(overrides: {
   status?: string;
@@ -98,5 +98,32 @@ describe('reconcileBookingCalendar', () => {
   it('rejects malformed booking identifiers', async () => {
     await expect(reconcileBookingCalendar({ bookingId: '35' }, sequentialDb([])))
       .rejects.toThrow('payload.bookingId must be a positive integer');
+  });
+});
+
+
+describe('deleteBookingCalendarEvent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    calendar.remove.mockResolvedValue(true);
+  });
+
+  it('deletes a previously linked event using the tenant calendar connection', async () => {
+    await deleteBookingCalendarEvent({ clientId: 7, googleEventId: 'event-35' });
+
+    expect(calendar.remove).toHaveBeenCalledWith(7, 'event-35');
+  });
+
+  it('throws when the provider cannot delete the event so the queue can retry', async () => {
+    calendar.remove.mockResolvedValue(false);
+
+    await expect(deleteBookingCalendarEvent({ clientId: 7, googleEventId: 'event-35' }))
+      .rejects.toThrow('Google Calendar event deletion failed');
+  });
+
+  it('rejects incomplete cleanup payloads', async () => {
+    await expect(deleteBookingCalendarEvent({ clientId: 7 }))
+      .rejects.toThrow('payload.googleEventId must be a non-empty string');
+    expect(calendar.remove).not.toHaveBeenCalled();
   });
 });
