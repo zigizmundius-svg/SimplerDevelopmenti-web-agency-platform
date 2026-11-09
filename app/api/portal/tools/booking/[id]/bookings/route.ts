@@ -135,6 +135,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         checkinCode: null,
       },
       attendees: attendeeRows,
+      actor: { actorType: 'user', actorId: userId, source: 'portal' },
     });
     const postCreate = await publishManualBookingCreated({ page, booking: created.booking, actorUserId: userId });
     return NextResponse.json({ success: true, data: { ...created.booking, meetingLink: postCreate.meetingLink } }, { status: 201 });
