@@ -65,21 +65,53 @@ export async function dispatchJournaledEvent(
   jobId: number,
   event: AutomationEvent,
 ): Promise<void> {
+  // Claim the journal row before running handlers. The retry cron uses the
+  // same pending -> running transition, so only one path can dispatch a row
+  // at a time. The lease also lets the cron recover a process that crashes.
+  const leaseUntil = new Date(Date.now() + 10 * 60_000);
+  const [claimed] = await db
+    .update(automationJobs)
+    .set({ status: 'running', nextRetryAt: leaseUntil })
+    .where(and(eq(automationJobs.id, jobId), eq(automationJobs.status, 'pending')))
+    .returning({ id: automationJobs.id });
+
+  if (!claimed) return;
+
   let allOk = true;
+  let firstError: unknown;
   await Promise.all(
     handlers.map((handler) =>
       handler(event).catch((err) => {
         allOk = false;
+        firstError ??= err;
         console.error(`[automation] Handler error for ${event.event}:`, err);
       }),
     ),
   );
 
+  // The lease timestamp is an ownership token: an expired/stale dispatcher
+  // cannot overwrite a row that the cron has already reclaimed.
+  const ownership = and(
+    eq(automationJobs.id, jobId),
+    eq(automationJobs.status, 'running'),
+    eq(automationJobs.nextRetryAt, leaseUntil),
+  );
+
   if (allOk) {
     await db
       .update(automationJobs)
-      .set({ status: 'completed', processedAt: new Date() })
-      .where(and(eq(automationJobs.id, jobId), eq(automationJobs.status, 'pending')));
+      .set({ status: 'completed', processedAt: new Date(), nextRetryAt: null, error: null })
+      .where(ownership);
+  } else {
+    const message = firstError instanceof Error ? firstError.message : String(firstError ?? 'Automation handler failed');
+    await db
+      .update(automationJobs)
+      .set({
+        status: 'pending',
+        nextRetryAt: new Date(Date.now() + 60_000),
+        error: message,
+      })
+      .where(ownership);
   }
 }
 
