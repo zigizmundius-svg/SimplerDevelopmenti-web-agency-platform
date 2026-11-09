@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
-import { drainInternalJobs } from '@/lib/jobs';
+import { drainInternalJobs, enqueueJob } from '@/lib/jobs';
 import { getTestSql, TEST_SCHEMA } from '../../helpers/test-db';
 import { sessionForNewClientUser } from '../../helpers/session';
 
@@ -48,4 +48,33 @@ describe('internal job queue lease recovery @jobs @integration', () => {
     expect(rows[1]).toMatchObject({ id: exhausted.id, status: 'dead_letter', attempt_count: 3 });
     expect(rows[1].next_retry_at).toBeNull();
   });
+
+  it('deduplicates repeated enqueue requests using the unique database key', async () => {
+    const tenant = await sessionForNewClientUser('internal-jobs-dedupe');
+
+    await Promise.all([
+      enqueueJob({
+        clientId: tenant.client.id,
+        type: 'pod.submit',
+        payload: { orderId: 123 },
+        dedupeKey: 'test:dedupe-single-job',
+      }, db),
+      enqueueJob({
+        clientId: tenant.client.id,
+        type: 'pod.submit',
+        payload: { orderId: 123 },
+        dedupeKey: 'test:dedupe-single-job',
+      }, db),
+    ]);
+
+    const sql = getTestSql();
+    const rows = await sql<{ count: number }[]>\`
+      SELECT COUNT(*)::int AS count
+      FROM \${sql(TEST_SCHEMA)}.internal_jobs
+      WHERE client_id = \${tenant.client.id}
+        AND dedupe_key = 'test:dedupe-single-job'
+    \`;
+    expect(rows[0].count).toBe(1);
+  });
+
 });
