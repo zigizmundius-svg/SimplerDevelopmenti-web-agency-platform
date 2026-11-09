@@ -55,7 +55,7 @@ export async function deliverBookingEmail(
   const emailKind = kind as EmailKind;
 
   // Skip stale notifications when a later state transition superseded them.
-  if (emailKind === 'confirmation' && booking.status !== 'confirmed') return;
+  if (emailKind === 'confirmation' && booking.status === 'cancelled') return;
   if (emailKind === 'cancellation' && booking.status !== 'cancelled') return;
 
   const timezone = booking.timezone || page.timezone || 'UTC';
