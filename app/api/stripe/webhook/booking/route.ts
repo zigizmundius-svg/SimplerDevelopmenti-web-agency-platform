@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { bookings, bookingPages, bookingQuotes, clients, users, giftCertificates } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@/lib/email/booking-emails';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
 import { updateBookingRecord } from '@/lib/booking/service';
@@ -151,32 +150,8 @@ export async function POST(req: Request) {
           .where(eq(bookings.id, bookingId));
       }
 
-      // Send confirmation emails
-      const emailData = {
-        guestName: booking.guestName,
-        guestEmail: booking.guestEmail,
-        pageTitle: page.title,
-        startTime: booking.startTime,
-        endTime: booking.endTime,
-        timezone: bookingTimezone,
-        cancelToken: booking.cancelToken,
-        bookingSlug: page.slug,
-        duration: page.duration,
-        meetingLink,
-        brand: await loadBookingBrand(page.id),
-      };
+      // Confirmation emails are enqueued by updateBookingRecord in the payment transaction.
 
-      sendGuestConfirmation(emailData).catch(() => {});
-
-      const [client] = await db.select({ userId: clients.userId }).from(clients)
-        .where(eq(clients.id, page.clientId)).limit(1);
-      if (client) {
-        const [host] = await db.select({ email: users.email }).from(users)
-          .where(eq(users.id, client.userId)).limit(1);
-        if (host) {
-          sendHostNotification(host.email, emailData).catch(() => {});
-        }
-      }
 
     }
 
