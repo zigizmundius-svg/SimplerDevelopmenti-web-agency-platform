@@ -1,8 +1,6 @@
 import type { bookingPages, bookings } from '@/lib/db/schema';
 import { createCalendarEvent, deleteCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting, deleteZoomMeeting } from '@/lib/zoom';
-import { sendGuestConfirmation, sendHostNotification, sendCancellationEmail, loadBookingBrand } from '@/lib/email/booking-emails';
-import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 
 type BookingPage = typeof bookingPages.$inferSelect;
 type Booking = typeof bookings.$inferSelect;
@@ -52,30 +50,7 @@ export async function publishManualBookingCreated(input: {
     console.error('[booking] Manual booking calendar/conference setup failed:', error);
   }
 
-  const emailData = {
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    pageTitle: page.title,
-    startTime: booking.startTime,
-    endTime: booking.endTime,
-    timezone,
-    cancelToken: booking.cancelToken,
-    bookingSlug: page.slug,
-    duration: page.duration,
-    meetingLink,
-    brand: await loadBookingBrand(page.id).catch(() => null),
-  };
-
-  void sendGuestConfirmation(emailData).catch((error) => {
-    console.warn('[booking] Manual guest confirmation failed:', error);
-  });
-
-  void (async () => {
-    const hostEmail = await resolveHostNotificationEmail(page.clientId, booking.assignedTo).catch(() => null);
-    if (hostEmail) await sendHostNotification(hostEmail, emailData);
-  })().catch((error) => {
-    console.warn('[booking] Manual host notification failed:', error);
-  });
+  // Confirmation emails are persisted by createBookingRecord's transaction.
 
   return { meetingLink };
 }
@@ -98,32 +73,7 @@ export async function publishBookingCancelled(input: {
     });
   }
 
-  const brand = await loadBookingBrand(page.id).catch(() => null);
-  void sendCancellationEmail(
-    booking.guestEmail,
-    booking.guestName,
-    page.title,
-    booking.startTime,
-    booking.timezone || page.timezone || 'UTC',
-    page.slug,
-    brand,
-  ).catch((error) => {
-    console.warn('[booking] Guest cancellation email failed:', error);
-  });
+  // Guest/host cancellation emails are persisted by cancelBookingRecord.
 
-  const hostEmail = await resolveHostNotificationEmail(page.clientId, booking.assignedTo).catch(() => null);
-  if (hostEmail) {
-    try {
-      const { resend } = await import('@/lib/email/index');
-      await resend.emails.send({
-        from: `SimplerDevelopment <${process.env.RESEND_FROM_EMAIL || 'bookings@simplerdevelopment.com'}>`,
-        to: hostEmail,
-        subject: `Booking Cancelled: ${booking.guestName} — ${page.title}`,
-        html: `<p><strong>${booking.guestName}</strong> cancelled their ${page.title} appointment on ${new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: booking.timezone || page.timezone || 'UTC' }).format(booking.startTime)}.</p>`,
-      });
-    } catch (error) {
-      console.warn('[booking] Host cancellation email failed:', error);
-    }
-  }
 
 }
