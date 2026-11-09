@@ -442,6 +442,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
           bookingId: id,
           pageId: existing.bookingPageId,
           status: 'cancelled',
+          actor: { actorType: 'mcp', source: 'mcp' },
           notes: reason
             ? (prior ? `${prior}\n[cancelled] ${reason}` : `[cancelled] ${reason}`)
             : undefined,
