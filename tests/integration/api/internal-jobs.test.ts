@@ -68,12 +68,12 @@ describe('internal job queue lease recovery @jobs @integration', () => {
     ]);
 
     const sql = getTestSql();
-    const rows = await sql<{ count: number }[]>\`
+    const rows = await sql<{ count: number }[]>`
       SELECT COUNT(*)::int AS count
       FROM \${sql(TEST_SCHEMA)}.internal_jobs
       WHERE client_id = \${tenant.client.id}
         AND dedupe_key = 'test:dedupe-single-job'
-    \`;
+    `;
     expect(rows[0].count).toBe(1);
   });
 
