@@ -9,7 +9,7 @@ import { eq, and, ne, gte, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
-import { createBookingRecord, resolveDefaultBookingAssignee, validateBookingSlot } from '@/lib/booking/service';
+import { createBookingRecord, resolveDefaultBookingAssignee, updateBookingRecord, validateBookingSlot } from '@/lib/booking/service';
 import { resolveApprovalContext } from '@/lib/mcp/approval-mode';
 
 interface AttendeeInput {
@@ -459,6 +459,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       duration: page.duration,
       timezone: bookingTimezone,
     });
+    if (meetingLink) {
+      await updateBookingRecord({
+        bookingId: booking.id,
+        pageId: page.id,
+        meetingLink,
+        actor: { actorType: 'guest', source: 'public' },
+      }).catch((error) => console.warn('[booking] Could not persist legacy Zoom link:', error));
+    }
 
     if (page.googleCalendarSync) {
       createCalendarEvent({
