@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
   let booking: typeof bookings.$inferSelect;
   try {
-    booking = await cancelBookingRecord({ token, rejectPast: true });
+    booking = await cancelBookingRecord({ token, rejectPast: true, actor: { actorType: 'guest', source: 'public' } });
   } catch (error) {
     const status = (error as { status?: number })?.status;
     if (status === 400 || status === 404 || status === 409) {
