@@ -250,3 +250,29 @@ clean up external resources before deleting the client). Booking audit history
 also currently cascades with its booking/client and is not an immutable,
 long-retention audit archive. Define retention/export requirements before
 production use.
+
+
+### Booking audit retention and tenant offboarding
+
+The booking audit table deliberately keeps the historical numeric `client_id`
+without a foreign key to the live `clients` row. This preserves tenant
+attribution after client deletion without retaining the deleted client's
+profile or contact data. `booking_id` is nullable and uses `ON DELETE SET NULL`:
+the operational event remains, while its live booking reference is cleared.
+The audit snapshots continue to exclude guest contact details, notes, answers,
+tokens, and payment identifiers.
+
+This is not an unlimited-retention policy. Production must define a documented
+retention period, export/access controls, and a deletion process for any
+personal data that may later be added to audit snapshots. The current snapshots
+are limited to operational booking state.
+
+Whole-client deletion must be an ordered offboarding workflow, not a raw
+`DELETE clients`: stop accepting new bookings, disable integrations, reconcile
+and drain external cleanup jobs while the tenant's integration credentials
+still exist, export data as contractually required, then remove the tenant.
+Because `internal_jobs` and integration tokens are tenant-owned and currently
+cascade-delete with the client, deleting the client first would destroy pending
+cleanup work and credentials. The API/UI must block final deletion while
+pending/running/dead-letter external cleanup remains, unless an explicit
+operator-approved abandonment path is recorded.
