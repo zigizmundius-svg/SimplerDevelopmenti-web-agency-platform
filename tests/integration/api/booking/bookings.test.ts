@@ -205,13 +205,13 @@ describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => 
       channel: 'portal',
     });
 
-    const emailJobs = await sql<{ type: string; payload: Record<string, unknown>; dedupe_key: string }[]>\`
+    const emailJobs = await sql<{ type: string; payload: Record<string, unknown>; dedupe_key: string }[]>`
       SELECT type, payload, dedupe_key
       FROM ${sql(TEST_SCHEMA)}.internal_jobs
       WHERE client_id = ${A.client.id}
         AND payload->>'bookingId' = ${String(res.data!.data.id)}
       ORDER BY dedupe_key
-    \`;
+    `;
     expect(emailJobs).toHaveLength(2);
     expect(emailJobs.map((job) => job.type)).toEqual(['booking.email', 'booking.email']);
     expect(emailJobs.map((job) => job.payload.recipient).sort()).toEqual(['guest', 'host']);
@@ -411,13 +411,13 @@ describe('PUT /api/portal/tools/booking/[id]/bookings/[bookingId] @booking @port
       channel: 'portal',
     });
 
-    const emailJobs = await sql<{ type: string; payload: Record<string, unknown>; dedupe_key: string }[]>\`
+    const emailJobs = await sql<{ type: string; payload: Record<string, unknown>; dedupe_key: string }[]>`
       SELECT type, payload, dedupe_key
       FROM ${sql(TEST_SCHEMA)}.internal_jobs
       WHERE client_id = ${A.client.id}
         AND payload->>'bookingId' = ${String(booking.id)}
       ORDER BY dedupe_key
-    \`;
+    `;
     expect(emailJobs).toHaveLength(2);
     expect(emailJobs.map((job) => job.type)).toEqual(['booking.email', 'booking.email']);
     expect(emailJobs.map((job) => job.payload.recipient).sort()).toEqual(['guest', 'host']);
