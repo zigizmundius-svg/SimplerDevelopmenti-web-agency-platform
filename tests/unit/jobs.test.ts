@@ -2,12 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { drainInternalJobs, MAX_ATTEMPTS } from '@/lib/jobs';
 
 function makeDb(reclaimedRows: Array<{ status: 'pending' | 'dead_letter' }>) {
+  type Builder = {
+    set(values: Record<string, unknown>): Builder;
+    where(condition?: unknown): Builder;
+    returning(): Promise<Array<{ status: 'pending' | 'dead_letter' }>>;
+    from(table: unknown): Builder;
+    orderBy(order: unknown): Builder;
+    limit(count: number): Promise<never[]>;
+  };
   const updates: Array<Record<string, unknown>> = [];
 
   const db = {
     update: vi.fn(() => {
-      const builder: any = {};
-      builder.set = (values: Record<string, unknown>) => {
+      const builder = {} as Builder;
+      builder.set = (values) => {
         updates.push(values);
         return builder;
       };
@@ -16,7 +24,7 @@ function makeDb(reclaimedRows: Array<{ status: 'pending' | 'dead_letter' }>) {
       return builder;
     }),
     select: vi.fn(() => {
-      const builder: any = {};
+      const builder = {} as Builder;
       builder.from = () => builder;
       builder.where = () => builder;
       builder.orderBy = () => builder;
