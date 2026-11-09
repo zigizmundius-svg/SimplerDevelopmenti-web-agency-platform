@@ -30,7 +30,7 @@ export interface BookingBrand {
   tagline?: string | null;
 }
 
-interface BookingEmailData {
+export interface BookingEmailData {
   guestName: string;
   guestEmail: string;
   pageTitle: string;
