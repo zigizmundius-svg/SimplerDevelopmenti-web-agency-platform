@@ -437,6 +437,28 @@ export const bookings = pgTable('bookings', {
 // individual bookings, the bookings row IS the single attendee — no row
 // is created here. For group bookings, one bookings row represents the
 // slot ("class") and N attendee rows represent the registrants.
+/**
+ * Append-only domain audit for booking mutations. Kept separate from agent
+ * telemetry so every channel (public, portal, agency, MCP, and webhooks) can
+ * record the same business history inside the booking transaction.
+ */
+export const bookingAuditLogs = pgTable('booking_audit_logs', {
+  id: serial('id').primaryKey(),
+  clientId: integer('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  bookingId: integer('booking_id').notNull().references(() => bookings.id, { onDelete: 'cascade' }),
+  actorType: varchar('actor_type', { length: 20 }).notNull(), // guest, user, system, webhook, mcp
+  actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  source: varchar('source', { length: 40 }).notNull(),
+  action: varchar('action', { length: 30 }).notNull(),
+  beforeState: json('before_state').$type<Record<string, unknown> | null>(),
+  afterState: json('after_state').$type<Record<string, unknown> | null>(),
+  requestId: varchar('request_id', { length: 128 }),
+  occurredAt: timestamp('occurred_at').defaultNow().notNull(),
+}, (t) => [
+  index('booking_audit_logs_booking_idx').on(t.bookingId, t.occurredAt),
+  index('booking_audit_logs_client_idx').on(t.clientId, t.occurredAt),
+]);
+
 export const bookingAttendees = pgTable('booking_attendees', {
   id: serial('id').primaryKey(),
   bookingId: integer('booking_id').notNull().references(() => bookings.id, { onDelete: 'cascade' }),
