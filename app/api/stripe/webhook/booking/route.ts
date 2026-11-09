@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { bookings, bookingPages, bookingQuotes, clients, users, giftCertificates } from '@/lib/db/schema';
+import { bookings, bookingPages, bookingQuotes, giftCertificates } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
