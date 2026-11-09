@@ -85,7 +85,6 @@ export async function publishManualBookingCreated(input: {
 export async function publishBookingCancelled(input: {
   page: BookingPage;
   booking: Booking;
-  actorUserId: number;
 }): Promise<void> {
   const { page, booking } = input;
   if (booking.googleEventId) {
