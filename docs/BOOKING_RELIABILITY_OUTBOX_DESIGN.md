@@ -181,7 +181,7 @@ The existing PostgreSQL `internal_jobs` queue now handles:
 
 Public paid bookings deliberately do not create calendar events or send confirmation emails before Stripe confirms payment. The payment transition enqueues those effects. Existing fast-path calendar calls remain in place where they provide immediate feedback; the queued reconciliation is the durable recovery path. New Zoom setup remains out of MVP. Existing Zoom create/update/delete paths are retained as legacy best-effort behavior and are not yet durable.
 
-This is at-least-once delivery, not exactly-once. If Resend accepts a message and the worker dies before marking the job complete, a retry can send a duplicate because provider-side idempotency is not currently wired. Calendar creation is protected by the stable event ID; calendar updates are idempotent patches. Operator-facing dead-letter visibility and retry controls remain to be built.
+This is at-least-once delivery, not exactly-once. If Resend accepts a message and the worker dies before marking the job complete, a retry can send a duplicate because provider-side idempotency is not currently wired. Calendar creation is protected by the stable event ID; calendar updates are idempotent patches. Agency operators can inspect dead-letter jobs and retry them from `/admin/internal-jobs`; this is an operational recovery control, not an exactly-once guarantee.
 
 
 
@@ -199,3 +199,20 @@ The in-process dispatcher and retry cron must compete for the same atomic `pendi
 Google Calendar booking event creation now uses a deterministic event ID derived from the booking's database ID (base32hex, valid for Google Calendar event IDs). If Google creates the event but the application fails before saving `googleEventId`, a retry receives a conflict and reads the already-created event instead of inserting a duplicate. Google Meet conference creation also uses a stable request ID. Deleting an event that is already absent is treated as success.
 
 Calendar create/update/delete operations are now reconciled by the `booking.calendar_sync` internal job. Booking emails are dispatched by separate `booking.email` jobs per recipient. Both job families are enqueued in the same transaction as the booking state change. These paths are implemented but remain unverified by typecheck, Vitest, and CI.
+
+
+## Worker regression tests added
+
+Unit coverage now exercises the calendar reconciliation races:
+- cancellation committed while Google event creation is in flight;
+- a second reschedule committed while an event update is in flight;
+- booking deletion during event creation and deterministic-event cleanup;
+- malformed booking IDs.
+
+Email-worker unit coverage exercises:
+- stale confirmation suppression after cancellation;
+- stale reschedule suppression after a later time change;
+- propagation of provider failures so the queue can retry;
+- skipping host delivery when no host notification address is configured.
+
+These tests are committed but have NOT been executed. They must be run with the full unit suite and typecheck before the branch is considered verified.
