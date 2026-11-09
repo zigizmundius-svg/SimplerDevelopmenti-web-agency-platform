@@ -109,6 +109,7 @@ export async function POST(req: Request) {
         assignedUserId: null,
         checkinCode: null,
       },
+      actor: { actorType: 'user', actorId: Number.parseInt(String(session.user.id), 10) || null, source: 'agency' },
       attendees: page.bookingType === 'group'
         ? Array.from({ length: seats }, (_, i) => ({
             name: i === 0 ? guestName : `${guestName} (+${i})`,
