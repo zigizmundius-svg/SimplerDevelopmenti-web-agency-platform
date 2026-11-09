@@ -47,7 +47,11 @@ export async function deliverBookingEmail(
   const [row] = await db.select({ booking: bookings, page: bookingPages })
     .from(bookings)
     .innerJoin(bookingPages, eq(bookings.bookingPageId, bookingPages.id))
-    .where(and(eq(bookings.id, bookingId), eq(bookings.clientId, clientId)))
+    .where(and(
+      eq(bookings.id, bookingId),
+      eq(bookings.clientId, clientId),
+      eq(bookingPages.clientId, clientId),
+    ))
     .limit(1);
   if (!row) return;
 
