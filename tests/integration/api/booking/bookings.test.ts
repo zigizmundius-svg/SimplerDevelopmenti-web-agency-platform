@@ -586,3 +586,40 @@ describe('booking audit retention @booking @portal', () => {
     });
   });
 });
+
+
+describe('DELETE /api/portal/tools/booking/[id] calendar cleanup @booking @portal', () => {
+  it('queues external calendar deletion before cascading the booking page and bookings', async () => {
+    const ctx = await sessionForNewClientUser('bk-page-delete-calendar');
+    await enableBookingService(ctx);
+    const page = await seedPage(ctx);
+    const booking = await seedBooking({ pageId: page.id, clientId: ctx.client.id });
+    const sql = getTestSql();
+    await sql`UPDATE ${sql(TEST_SCHEMA)}.bookings SET google_event_id = 'evt_cleanup_123' WHERE id = ${booking.id}`;
+    mockedAuth.mockResolvedValue(ctx.session);
+
+    const route = await import('@/app/api/portal/tools/booking/[id]/route');
+    const res = await callHandler<{ success: boolean }>(
+      route as unknown as Record<string, unknown>, 'DELETE',
+      { params: { id: String(page.id) } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.data?.success).toBe(true);
+
+    const remainingBookings = await sql<{ id: number }[]>`
+      SELECT id FROM ${sql(TEST_SCHEMA)}.bookings WHERE id = ${booking.id}
+    `;
+    expect(remainingBookings).toHaveLength(0);
+
+    const [cleanup] = await sql<{ type: string; payload: Record<string, unknown> }[]>`
+      SELECT type, payload FROM ${sql(TEST_SCHEMA)}.internal_jobs
+      WHERE client_id = ${ctx.client.id}
+        AND type = 'booking.calendar_delete'
+        AND payload->>'googleEventId' = 'evt_cleanup_123'
+    `;
+    expect(cleanup).toMatchObject({
+      type: 'booking.calendar_delete',
+      payload: { clientId: ctx.client.id, googleEventId: 'evt_cleanup_123' },
+    });
+  });
+});
