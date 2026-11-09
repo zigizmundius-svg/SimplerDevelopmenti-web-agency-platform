@@ -127,7 +127,7 @@ export const automationJobs = pgTable('automation_jobs', {
   event: varchar('event', { length: 100 }).notNull(),
   userId: integer('user_id').default(0).notNull(),
   payload: json('payload').$type<Record<string, unknown>>().notNull(),
-  // 'pending' | 'completed' | 'failed' | 'dead_letter'
+  // 'pending' | 'running' | 'completed' | 'dead_letter'
   status: varchar('status', { length: 20 }).default('pending').notNull(),
   attemptCount: integer('attempt_count').default(0).notNull(),
   nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
