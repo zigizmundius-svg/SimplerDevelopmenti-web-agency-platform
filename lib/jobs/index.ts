@@ -67,6 +67,11 @@ export const JOB_HANDLERS: Record<
     const { runDelayedAutomationAction } = await import('@/lib/automation/delayed-action-job');
     await runDelayedAutomationAction(payload, db);
   },
+
+  'booking.calendar_sync': async (payload, db) => {
+    const { reconcileBookingCalendar } = await import('@/lib/jobs/booking-calendar-sync');
+    await reconcileBookingCalendar(payload, db);
+  },
 };
 
 // ─── enqueue ─────────────────────────────────────────────────────────────────
