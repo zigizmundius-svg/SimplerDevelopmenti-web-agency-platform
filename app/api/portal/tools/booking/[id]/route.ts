@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { bookingPages } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { bookingPages, bookings, internalJobs } from '@/lib/db/schema';
+import { eq, and, isNotNull } from 'drizzle-orm';
 import { getPortalClient } from '@/lib/portal-client';
 import { authorizePortal, isAuthError } from '@/lib/portal-auth';
 
@@ -127,6 +127,34 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const page = await resolveBookingPage(parseInt(id), parseInt(session.user.id, 10));
   if (!page) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
-  await db.delete(bookingPages).where(eq(bookingPages.id, page.id));
+  // Preserve external calendar cleanup before the booking rows cascade-delete.
+  // Queue rows are tenant-owned (not booking-owned), so they survive page deletion.
+  await db.transaction(async (tx) => {
+    const linkedEvents = await tx.select({
+      bookingId: bookings.id,
+      googleEventId: bookings.googleEventId,
+    }).from(bookings).where(and(
+      eq(bookings.bookingPageId, page.id),
+      eq(bookings.clientId, page.clientId),
+      isNotNull(bookings.googleEventId),
+    ));
+
+    if (linkedEvents.length > 0) {
+      await tx.insert(internalJobs).values(linkedEvents.map((booking) => ({
+        clientId: page.clientId,
+        type: 'booking.calendar_delete' as const,
+        payload: {
+          clientId: page.clientId,
+          googleEventId: booking.googleEventId!,
+        },
+        dedupeKey: `booking.calendar_delete:${booking.bookingId}:${booking.googleEventId}`,
+      }))).onConflictDoNothing({ target: internalJobs.dedupeKey });
+    }
+
+    await tx.delete(bookingPages).where(and(
+      eq(bookingPages.id, page.id),
+      eq(bookingPages.clientId, page.clientId),
+    ));
+  });
   return NextResponse.json({ success: true });
 }
