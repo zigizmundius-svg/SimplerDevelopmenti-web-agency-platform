@@ -613,10 +613,17 @@ export async function updateBookingRecord(input: {
           actor: input.actor,
         })
       : null;
-    if (action === 'cancelled' || event === 'booking.confirmed') {
+    const cancelledBeforeExternalPayment = action === 'cancelled'
+      && booking.paymentStatus === 'pending'
+      && (input.actor?.source === 'public' || input.actor?.source === 'stripe')
+      && !booking.googleEventId;
+    if ((action === 'cancelled' || event === 'booking.confirmed') && !cancelledBeforeExternalPayment) {
       await writeBookingCalendarSyncJob(tx, page, updated);
     }
-    if (action === 'cancelled') {
+    const unpaidPublicCancellation = action === 'cancelled'
+      && booking.paymentStatus === 'pending'
+      && (input.actor?.source === 'public' || input.actor?.source === 'stripe');
+    if (action === 'cancelled' && !unpaidPublicCancellation) {
       await writeBookingEmailJobs(tx, updated, 'cancellation');
     } else if (event === 'booking.confirmed') {
       await writeBookingEmailJobs(tx, updated, 'confirmation');
@@ -689,8 +696,15 @@ export async function cancelBookingRecord(input: {
         })
       : null;
     if (page) {
-      await writeBookingCalendarSyncJob(tx, page, updated);
-      await writeBookingEmailJobs(tx, updated, 'cancellation');
+      const cancelledBeforeExternalPayment = booking.paymentStatus === 'pending'
+        && input.actor?.source === 'public'
+        && !booking.googleEventId;
+      if (!cancelledBeforeExternalPayment) {
+        await writeBookingCalendarSyncJob(tx, page, updated);
+      }
+      if (!(booking.paymentStatus === 'pending' && input.actor?.source === 'public')) {
+        await writeBookingEmailJobs(tx, updated, 'cancellation');
+      }
     }
     return { booking: updated, automation };
   });
