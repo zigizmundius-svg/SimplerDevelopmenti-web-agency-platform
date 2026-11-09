@@ -89,4 +89,45 @@ describe('internal job queue lease recovery @jobs @integration', () => {
     expect(rows[0].count).toBe(1);
   });
 
+
+  it('allows only one concurrent drainer to claim and consume a due job', async () => {
+    const tenant = await sessionForNewClientUser('internal-jobs-claim-race');
+    const sql = getTestSql();
+    const dedupeKey = `test:claim-race:${tenant.client.id}`;
+    const [inserted] = await sql`
+      INSERT INTO ${sql(TEST_SCHEMA)}.internal_jobs (
+        client_id, type, payload, status, attempt_count, next_retry_at, dedupe_key
+      ) VALUES (
+        ${tenant.client.id}, 'test.missing-handler', '{}'::json, 'pending', 0, NULL, ${dedupeKey}
+      )
+      RETURNING id
+    `;
+
+    const secondClient = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const secondDb = drizzle(secondClient, { schema });
+    let results;
+    try {
+      results = await Promise.all([drainInternalJobs(db), drainInternalJobs(secondDb)]);
+    } finally {
+      await secondClient.end();
+    }
+
+    // Both workers may read the due row, but only one pending -> running CAS
+    // can win. The missing handler makes that single claimed attempt retryable.
+    expect(results.reduce((sum, result) => sum + result.failed, 0)).toBe(1);
+    expect(results.reduce((sum, result) => sum + result.processed, 0)).toBe(0);
+
+    const [job] = await sql`
+      SELECT status, attempt_count, error, next_retry_at
+      FROM ${sql(TEST_SCHEMA)}.internal_jobs
+      WHERE id = ${inserted.id}
+    `;
+    expect(job).toMatchObject({
+      status: 'pending',
+      attempt_count: 1,
+      error: "No handler registered for job type 'test.missing-handler'",
+    });
+    expect(job.next_retry_at).toBeInstanceOf(Date);
+  });
+
 });
