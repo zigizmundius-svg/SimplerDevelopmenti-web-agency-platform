@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, platform/ru-adaptation]
+  workflow_dispatch:
   pull_request:
     branches: [main]
     # `labeled`/`unlabeled` are NOT in the default type set. Without them, adding
