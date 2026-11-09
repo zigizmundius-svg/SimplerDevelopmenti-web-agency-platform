@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from '@/lib/db/schema';
 import { drainInternalJobs, enqueueJob } from '@/lib/jobs';
 import { getTestSql, TEST_SCHEMA } from '../../helpers/test-db';
 import { sessionForNewClientUser } from '../../helpers/session';
@@ -28,7 +31,16 @@ describe('internal job queue lease recovery @jobs @integration', () => {
       RETURNING id
     `;
 
-    const results = await Promise.all([drainInternalJobs(db), drainInternalJobs(db)]);
+    // Use independent PostgreSQL pools so the two drainers can truly race;
+    // the application's default pool is intentionally max=1.
+    const secondClient = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const secondDb = drizzle(secondClient, { schema });
+    let results;
+    try {
+      results = await Promise.all([drainInternalJobs(db), drainInternalJobs(secondDb)]);
+    } finally {
+      await secondClient.end();
+    }
     const failed = results.reduce((sum, result) => sum + result.failed, 0);
     const deadLettered = results.reduce((sum, result) => sum + result.deadLettered, 0);
 
