@@ -182,3 +182,8 @@ existing PostgreSQL `internal_jobs` queue (or a narrowly scoped effect ledger
 linked to it), enqueue them atomically with the booking transition, and give
 each provider operation independent idempotency/reconciliation. Do not claim
 exactly-once external delivery.
+
+
+## Dispatch concurrency note
+
+The in-process dispatcher and retry cron must compete for the same atomic `pending -> running` claim. A dispatcher may complete or release a row only while it still owns the exact lease timestamp. Delivery remains at-least-once, so external handlers must be idempotent.
