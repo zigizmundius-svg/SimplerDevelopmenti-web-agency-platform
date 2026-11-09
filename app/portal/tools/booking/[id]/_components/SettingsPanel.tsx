@@ -59,7 +59,6 @@ interface SettingsPanelProps {
 const CONFERENCE_OPTIONS = [
   { value: 'none', label: 'None', icon: 'videocam_off', desc: 'No video call' },
   { value: 'google_meet', label: 'Google Meet', icon: 'video_call', desc: 'Requires Google Calendar' },
-  { value: 'zoom', label: 'Zoom', icon: 'video_camera_front', desc: 'Requires Zoom connection' },
 ];
 
 export function SettingsPanel(props: SettingsPanelProps) {
@@ -230,17 +229,23 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <p className="text-xs text-muted-foreground mb-3">
           Automatically generate a video call link for each booking. The link will be included in confirmation emails.
         </p>
-        <div className="grid grid-cols-3 gap-3">
-          {CONFERENCE_OPTIONS.map((opt) => (
+        <div className={`grid gap-3 ${conferenceType === 'zoom' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {[...CONFERENCE_OPTIONS, ...(conferenceType === 'zoom' ? [{
+            value: 'zoom',
+            label: 'Zoom (legacy)',
+            icon: 'video_camera_front',
+            desc: 'Existing setup retained; new Zoom setups are deferred',
+          }] : [])].map((opt) => (
             <button
               key={opt.value}
               type="button"
+              disabled={opt.value === 'zoom'}
               onClick={() => setConferenceType(opt.value)}
               className={`p-3 rounded-lg border text-left transition-all ${
                 conferenceType === opt.value
                   ? 'border-primary bg-primary/5 ring-1 ring-primary'
                   : 'border-border hover:border-primary/50'
-              }`}
+              } ${opt.value === 'zoom' ? 'cursor-not-allowed opacity-70' : ''}`}
             >
               <span
                 className={`material-icons text-xl mb-1 ${
