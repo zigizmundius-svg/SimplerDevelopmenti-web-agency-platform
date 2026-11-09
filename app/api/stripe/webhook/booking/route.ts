@@ -91,6 +91,7 @@ export async function POST(req: Request) {
         pageId: booking.bookingPageId,
         paymentStatus: 'paid',
         paidAt: new Date(),
+        actor: { actorType: 'webhook', source: 'stripe' },
       });
 
       // Get booking page for conference/calendar settings
@@ -220,6 +221,7 @@ export async function POST(req: Request) {
             pageId: booking.bookingPageId,
             status: 'cancelled',
             paymentStatus: 'free',
+            actor: { actorType: 'webhook', source: 'stripe' },
           });
         }
       }
@@ -245,6 +247,7 @@ export async function POST(req: Request) {
             bookingId: booking.id,
             pageId: booking.bookingPageId,
             paymentStatus: 'refunded',
+            actor: { actorType: 'webhook', source: 'stripe' },
           });
         }
       }
