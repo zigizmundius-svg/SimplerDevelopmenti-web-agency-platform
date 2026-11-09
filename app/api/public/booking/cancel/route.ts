@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     .where(eq(bookingPages.id, booking.bookingPageId))
     .limit(1);
   if (page) {
-    await publishBookingCancelled({ page, booking, actorUserId: 0, source: 'public' });
+    await publishBookingCancelled({ page, booking });
   }
 
   return NextResponse.json({
