@@ -215,6 +215,7 @@ export async function POST(req: Request) {
       token,
       newStartTime: newStart,
       timezone: effectiveTz,
+      actor: { actorType: 'guest', source: 'public' },
     });
     updated = result.updated;
   } catch (err) {
