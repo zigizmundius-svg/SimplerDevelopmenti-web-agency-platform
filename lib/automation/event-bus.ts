@@ -12,7 +12,7 @@
 
 import { db } from '@/lib/db';
 import { automationJobs } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 export interface AutomationEvent {
   event: string;        // e.g. 'booking.created', 'crm.deal.updated'
@@ -79,7 +79,7 @@ export async function dispatchJournaledEvent(
     await db
       .update(automationJobs)
       .set({ status: 'completed', processedAt: new Date() })
-      .where(eq(automationJobs.id, jobId));
+      .where(and(eq(automationJobs.id, jobId), eq(automationJobs.status, 'pending')));
   }
 }
 
