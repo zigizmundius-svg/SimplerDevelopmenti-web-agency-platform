@@ -72,6 +72,7 @@ export async function POST(
       pageId: page.id,
       paymentStatus: isFullRefund ? 'refunded' : 'paid',
       status: isFullRefund ? 'cancelled' : undefined,
+      actor: { actorType: 'user', actorId: Number.parseInt(session.user.id, 10) || null, source: 'portal' },
     });
     if (isFullRefund && booking.status !== 'cancelled') {
       await publishBookingCancelled({
