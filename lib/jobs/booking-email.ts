@@ -28,10 +28,14 @@ export async function deliverBookingEmail(
   db: Db = defaultDb,
 ): Promise<void> {
   const bookingId = payload.bookingId;
+  const clientId = payload.clientId;
   const kind = payload.kind;
   const recipient = payload.recipient;
   if (typeof bookingId !== 'number' || !Number.isInteger(bookingId) || bookingId <= 0) {
     throw new Error('booking.email: payload.bookingId must be a positive integer');
+  }
+  if (typeof clientId !== 'number' || !Number.isInteger(clientId) || clientId <= 0) {
+    throw new Error('booking.email: payload.clientId must be a positive integer');
   }
   if (!['confirmation', 'cancellation', 'reschedule'].includes(String(kind))) {
     throw new Error('booking.email: unsupported email kind');
@@ -43,7 +47,7 @@ export async function deliverBookingEmail(
   const [row] = await db.select({ booking: bookings, page: bookingPages })
     .from(bookings)
     .innerJoin(bookingPages, eq(bookings.bookingPageId, bookingPages.id))
-    .where(and(eq(bookings.id, bookingId), eq(bookings.clientId, Number(payload.clientId))))
+    .where(and(eq(bookings.id, bookingId), eq(bookings.clientId, clientId)))
     .limit(1);
   if (!row) return;
 
@@ -51,7 +55,7 @@ export async function deliverBookingEmail(
   const emailKind = kind as EmailKind;
 
   // Skip stale notifications when a later state transition superseded them.
-  if (emailKind === 'confirmation' && booking.status === 'cancelled') return;
+  if (emailKind === 'confirmation' && booking.status !== 'confirmed') return;
   if (emailKind === 'cancellation' && booking.status !== 'cancelled') return;
 
   const timezone = booking.timezone || page.timezone || 'UTC';
