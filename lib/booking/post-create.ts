@@ -1,7 +1,6 @@
 import type { bookingPages, bookings } from '@/lib/db/schema';
 import { createCalendarEvent, deleteCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting, deleteZoomMeeting } from '@/lib/zoom';
-import { emitEvent } from '@/lib/automation';
 import { sendGuestConfirmation, sendHostNotification, sendCancellationEmail, loadBookingBrand } from '@/lib/email/booking-emails';
 import { resolveHostNotificationEmail } from '@/lib/booking/host-notification';
 
@@ -53,24 +52,6 @@ export async function publishManualBookingCreated(input: {
   } catch (error) {
     console.error('[booking] Manual booking calendar/conference setup failed:', error);
   }
-
-  emitEvent('booking.guest_booked', page.clientId, actorUserId, {
-    bookingId: booking.id,
-    bookingPageId: page.id,
-    pageTitle: page.title,
-    pageSlug: page.slug,
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    guestPhone: booking.guestPhone,
-    startTime: booking.startTime,
-    endTime: booking.endTime,
-    timezone,
-    groupSize: booking.groupSize,
-    total: Number(booking.total ?? 0) / 100,
-    paymentStatus: booking.paymentStatus,
-    answers: booking.answers,
-    source: 'manual',
-  });
 
   const emailData = {
     guestName: booking.guestName,
@@ -148,15 +129,4 @@ export async function publishBookingCancelled(input: {
     }
   }
 
-  emitEvent('booking.cancelled', booking.clientId, actorUserId, {
-    bookingId: booking.id,
-    bookingPageId: page.id,
-    pageTitle: page.title,
-    pageSlug: page.slug,
-    guestName: booking.guestName,
-    guestEmail: booking.guestEmail,
-    startTime: booking.startTime,
-    timezone: booking.timezone,
-    source,
-  });
 }
