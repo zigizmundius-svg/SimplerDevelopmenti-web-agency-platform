@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { bookingPages, bookings, bookingAttendees, bookingPageMembers, clientMembers, bookingAuditLogs } from '@/lib/db/schema';
+import { bookingPages, bookings, bookingAttendees, bookingPageMembers, clientMembers, bookingAuditLogs, automationJobs } from '@/lib/db/schema';
 import { and, eq, ne, lte, gte, sql } from 'drizzle-orm';
 import { isSlotWithinAvailability, type BookingQueryDb } from '@/lib/booking/availability';
 import { checkSlotCapacity } from '@/lib/booking/capacity';
@@ -54,6 +54,85 @@ async function writeBookingAudit(
     afterState: input.afterState ?? null,
     requestId: actor.requestId ?? null,
   });
+}
+
+/** A booking mutation and its automation journal row are committed together. */
+type PendingBookingAutomation = {
+  jobId: number;
+  event: {
+    event: string;
+    clientId: number;
+    userId: number;
+    payload: Record<string, unknown>;
+    timestamp: Date;
+  };
+};
+
+async function writeBookingAutomationEvent(
+  tx: BookingTx,
+  input: {
+    event: 'booking.guest_booked' | 'booking.rescheduled' | 'booking.cancelled' | 'booking.confirmed';
+    page: BookingPage;
+    booking: typeof bookings.$inferSelect;
+    actor?: BookingAuditContext;
+    beforeBooking?: typeof bookings.$inferSelect;
+  },
+): Promise<PendingBookingAutomation> {
+  const { page, booking, actor } = input;
+  const source = actor?.source ?? 'system';
+  const payload: Record<string, unknown> = {
+    bookingId: booking.id,
+    bookingPageId: page.id,
+    pageTitle: page.title,
+    pageSlug: page.slug,
+    guestName: booking.guestName,
+    guestEmail: booking.guestEmail,
+    guestPhone: booking.guestPhone,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    timezone: booking.timezone || page.timezone,
+    groupSize: booking.groupSize,
+    total: Number(booking.total ?? 0) / 100,
+    paymentStatus: booking.paymentStatus,
+    source,
+  };
+  if (booking.answers) payload.answers = booking.answers;
+  if (input.beforeBooking) {
+    payload.previousStartTime = input.beforeBooking.startTime;
+    payload.previousEndTime = input.beforeBooking.endTime;
+  }
+  if (input.event === 'booking.rescheduled') {
+    payload.rescheduleCount = booking.rescheduleCount;
+  }
+
+  const [journal] = await tx.insert(automationJobs).values({
+    clientId: booking.clientId,
+    event: input.event,
+    userId: actor?.actorId && actor.actorId > 0 ? actor.actorId : 0,
+    payload,
+    status: 'pending',
+  }).returning({ id: automationJobs.id });
+
+  return {
+    jobId: journal.id,
+    event: {
+      event: input.event,
+      clientId: booking.clientId,
+      userId: actor?.actorId && actor.actorId > 0 ? actor.actorId : 0,
+      payload,
+      timestamp: new Date(),
+    },
+  };
+}
+
+/** Dispatch immediately after commit; the pending journal row is the crash-safe fallback. */
+function dispatchBookingAutomation(pending: PendingBookingAutomation | null): void {
+  if (!pending) return;
+  void import('@/lib/automation')
+    .then(({ dispatchJournaledEvent }) => dispatchJournaledEvent(pending.jobId, pending.event))
+    .catch((error) => {
+      console.error('[booking] Automation dispatch deferred to retry cron:', error);
+    });
 }
 
 /** Resolve the same default staff assignment used by public booking when an
@@ -203,7 +282,7 @@ export async function createBookingRecord(input: {
   timezone?: string;
   actor?: BookingAuditContext;
 }): Promise<{ booking: typeof bookings.$inferSelect; endTime: Date }> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-page:${input.page.id}`}))`);
     const validation = await validateBookingSlot({
       page: input.page,
@@ -242,8 +321,16 @@ export async function createBookingRecord(input: {
       afterState: bookingAuditSnapshot(booking),
       actor: input.actor,
     });
-    return { booking, endTime: validation.endTime };
+    const automation = await writeBookingAutomationEvent(tx, {
+      event: 'booking.guest_booked',
+      page: input.page,
+      booking,
+      actor: input.actor,
+    });
+    return { booking, endTime: validation.endTime, automation };
   });
+  dispatchBookingAutomation(result.automation);
+  return { booking: result.booking, endTime: result.endTime };
 }
 
 /**
@@ -276,7 +363,7 @@ export async function rescheduleBookingRecord(input: {
     throw error;
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Lock the page before reading the mutable booking row. This serializes
     // reschedules against creates and against other reschedules on this page.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-page:${bookingRef.bookingPageId}`}))`);
@@ -350,8 +437,17 @@ export async function rescheduleBookingRecord(input: {
       afterState: bookingAuditSnapshot(updated),
       actor: input.actor,
     });
-    return { booking, page, updated };
+    const automation = await writeBookingAutomationEvent(tx, {
+      event: 'booking.rescheduled',
+      page,
+      booking: updated,
+      beforeBooking: booking,
+      actor: input.actor,
+    });
+    return { booking, page, updated, automation };
   });
+  dispatchBookingAutomation(result.automation);
+  return { booking: result.booking, page: result.page, updated: result.updated };
 }
 
 /** Update non-time booking fields and validate staff reassignment under the
@@ -369,7 +465,7 @@ export async function updateBookingRecord(input: {
   paidAt?: Date | null;
   actor?: BookingAuditContext;
 }): Promise<typeof bookings.$inferSelect> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-page:${input.pageId}`}))`);
     const [row] = await tx.select({ booking: bookings, page: bookingPages })
       .from(bookings)
@@ -445,8 +541,22 @@ export async function updateBookingRecord(input: {
       afterState: bookingAuditSnapshot(updated),
       actor: input.actor,
     });
-    return updated;
+    const event = action === 'cancelled'
+      ? 'booking.cancelled'
+      : (booking.paymentStatus !== 'paid' && updated.paymentStatus === 'paid' ? 'booking.confirmed' : null);
+    const automation = event
+      ? await writeBookingAutomationEvent(tx, {
+          event,
+          page,
+          booking: updated,
+          beforeBooking: booking,
+          actor: input.actor,
+        })
+      : null;
+    return { booking: updated, automation };
   });
+  dispatchBookingAutomation(result.automation);
+  return result.booking;
 }
 
 /** Token-authorized public cancellation, serialized with other booking writes. */
@@ -462,7 +572,7 @@ export async function cancelBookingRecord(input: {
     error.status = 404;
     throw error;
   }
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-page:${ref.bookingPageId}`}))`);
     const [booking] = await tx.select().from(bookings)
       .where(and(eq(bookings.id, ref.id), eq(bookings.cancelToken, input.token)))
@@ -499,6 +609,19 @@ export async function cancelBookingRecord(input: {
       afterState: bookingAuditSnapshot(updated),
       actor: input.actor,
     });
-    return updated;
+    const [page] = await tx.select().from(bookingPages)
+      .where(eq(bookingPages.id, updated.bookingPageId)).limit(1);
+    const automation = page
+      ? await writeBookingAutomationEvent(tx, {
+          event: 'booking.cancelled',
+          page,
+          booking: updated,
+          beforeBooking: booking,
+          actor: input.actor,
+        })
+      : null;
+    return { booking: updated, automation };
   });
+  dispatchBookingAutomation(result.automation);
+  return result.booking;
 }
