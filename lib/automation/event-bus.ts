@@ -56,6 +56,33 @@ export async function runHandlers(event: AutomationEvent): Promise<void> {
   await Promise.all(handlers.map((h) => h(event)));
 }
 
+/**
+ * Dispatch an event that was already inserted into automation_jobs by the
+ * caller's domain transaction. The row is completed only after every handler
+ * succeeds; otherwise the existing retry cron will pick it up after GRACE_MS.
+ */
+export async function dispatchJournaledEvent(
+  jobId: number,
+  event: AutomationEvent,
+): Promise<void> {
+  let allOk = true;
+  await Promise.all(
+    handlers.map((handler) =>
+      handler(event).catch((err) => {
+        allOk = false;
+        console.error(`[automation] Handler error for ${event.event}:`, err);
+      }),
+    ),
+  );
+
+  if (allOk) {
+    await db
+      .update(automationJobs)
+      .set({ status: 'completed', processedAt: new Date() })
+      .where(eq(automationJobs.id, jobId));
+  }
+}
+
 async function dispatchWithJournal(event: AutomationEvent): Promise<void> {
   // Durable journal first — a single fast insert, far likelier to survive a
   // serverless cold-start than the full handler chain it backstops.
@@ -76,26 +103,12 @@ async function dispatchWithJournal(event: AutomationEvent): Promise<void> {
     console.error(`[automation] journal insert failed for ${event.event}:`, err);
   }
 
-  // In-process dispatch — unchanged behavior; each handler isolated so one
-  // failure doesn't sink the others.
-  let allOk = true;
-  await Promise.all(
-    handlers.map((h) =>
-      h(event).catch((err) => {
-        allOk = false;
-        console.error(`[automation] Handler error for ${event.event}:`, err);
-      }),
-    ),
-  );
-
-  // Mark done so the retry cron skips it. If the process died before reaching
-  // here, the row stays 'pending' and the cron re-runs the event (at-least-once).
-  if (jobId != null && allOk) {
-    await db
-      .update(automationJobs)
-      .set({ status: 'completed', processedAt: new Date() })
-      .where(eq(automationJobs.id, jobId))
-      .catch(() => {});
+  // Dispatch only after the durable row exists. If the process dies before
+  // completion, the retry cron will replay the pending row.
+  if (jobId != null) {
+    await dispatchJournaledEvent(jobId, event).catch((err) => {
+      console.error(`[automation] Failed to complete journaled event ${jobId}:`, err);
+    });
   }
 }
 
