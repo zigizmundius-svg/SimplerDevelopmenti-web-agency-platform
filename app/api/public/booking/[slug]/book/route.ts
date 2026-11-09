@@ -312,6 +312,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         status: 'confirmed',
       },
       attendees: attendeeRows,
+      actor: { actorType: 'guest', source: 'public' },
     });
     booking = created.booking;
   } catch (err) {
