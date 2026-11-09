@@ -216,3 +216,17 @@ Email-worker unit coverage exercises:
 - skipping host delivery when no host notification address is configured.
 
 These tests are committed but have NOT been executed. They must be run with the full unit suite and typecheck before the branch is considered verified.
+
+
+### Tenant-bound worker reads
+
+The calendar reconciliation worker joins bookings to booking pages only when both
+rows have the same `client_id`. The email worker additionally constrains
+both the booking and joined booking page to the `clientId` carried by the
+job. This is defense in depth: a malformed or inconsistent cross-tenant booking
+reference must not cause calendar changes or email content to be loaded across
+tenant boundaries.
+
+The queue integration suite also covers two drainers racing to claim one due
+job. Both may select the candidate, but only one can win the atomic
+`pending -> running` compare-and-set and consume an attempt.
