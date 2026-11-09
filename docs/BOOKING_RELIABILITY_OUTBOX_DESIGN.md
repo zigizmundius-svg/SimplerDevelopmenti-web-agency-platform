@@ -97,12 +97,14 @@ Avoid storing payment secrets or unnecessary personal data in audit snapshots. K
 
 ## Additional queue defect found during the follow-up review
 
-The existing `drainInternalJobs()` explicitly reclaims an expired `running` lease without incrementing `attempt_count`. Its own comment notes that a handler which repeatedly kills its worker can therefore retry forever and never reach `MAX_ATTEMPTS` / `dead_letter`.
+The existing `drainInternalJobs()` reclaimed an expired `running` lease without incrementing `attempt_count`, allowing a repeatedly crashing handler to retry forever.
 
-This is a general queue reliability defect, not only a booking issue. Fix it before adding booking jobs:
-- lease expiry must consume an attempt (a worker that disappeared is a failed attempt);
-- the transition to `dead_letter` at the maximum must be atomic, so another cron tick cannot claim the row between a pending update and a later dead-letter update;
-- preserve the current rule that a normally running but slow job is not penalized before its lease actually expires;
-- add tests for expired lease below the threshold, lease expiry reaching the threshold, and two concurrent drainers racing to reclaim/claim the same row.
+### Implemented on `platform/ru-adaptation`
 
-The queue has no dedicated unit test file in `tests/unit` at this point; this state machine should gain one before it becomes the delivery mechanism for booking side effects.
+- Lease recovery now increments `attempt_count` in the same SQL UPDATE that chooses `pending` or `dead_letter`.
+- The retry delay is assigned in that same statement (60 seconds after the first expired lease, then 5 minutes); the maximum-attempt transition cannot be interleaved with a second cron tick.
+- Each claimed worker now carries its exact lease-expiry timestamp as an ownership token. Completion/retry/dead-letter writes require both `status = running` and that exact token, so a stale worker cannot overwrite a row after another drainer has reclaimed it.
+- The cron result counters only count a completion/failure transition when its guarded UPDATE actually changed a row.
+- Added `tests/unit/jobs.test.ts` for bounded lease recovery, dead-letter counting, and the no-reclaim case. These are focused unit tests with a stubbed Drizzle surface; they do not replace a real PostgreSQL concurrency/integration test.
+
+The implementation is committed but **not yet executed by Vitest, typecheck, or CI**. The next verification step is to run the new test and add a database-backed concurrent-drainer test before relying on this queue for booking effects.
