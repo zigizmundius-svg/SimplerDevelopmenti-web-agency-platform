@@ -137,7 +137,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       attendees: attendeeRows,
       actor: { actorType: 'user', actorId: userId, source: 'portal' },
     });
-    const postCreate = await publishManualBookingCreated({ page, booking: created.booking, actorUserId: userId });
+    const postCreate = await publishManualBookingCreated({ page, booking: created.booking });
     return NextResponse.json({ success: true, data: { ...created.booking, meetingLink: postCreate.meetingLink } }, { status: 201 });
   } catch (err) {
     const status = (err as { status?: number })?.status;
