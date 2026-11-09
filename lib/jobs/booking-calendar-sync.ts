@@ -118,3 +118,23 @@ export async function reconcileBookingCalendar(
 
   throw new Error(`Booking ${bookingId} changed repeatedly during calendar reconciliation`);
 }
+
+
+/**
+ * Delete a Google Calendar event after its booking page (and cascading booking
+ * rows) has been removed. The client-level Google token remains available, and
+ * the queue row is committed before the page deletion in the same transaction.
+ */
+export async function deleteBookingCalendarEvent(payload: Record<string, unknown>): Promise<void> {
+  const clientId = payload.clientId;
+  const googleEventId = payload.googleEventId;
+  if (typeof clientId !== 'number' || !Number.isInteger(clientId) || clientId <= 0) {
+    throw new Error('booking.calendar_delete: payload.clientId must be a positive integer');
+  }
+  if (typeof googleEventId !== 'string' || !googleEventId.trim()) {
+    throw new Error('booking.calendar_delete: payload.googleEventId must be a non-empty string');
+  }
+
+  const deleted = await deleteCalendarEvent(clientId, googleEventId);
+  if (!deleted) throw new Error('booking.calendar_delete: Google Calendar event deletion failed');
+}
