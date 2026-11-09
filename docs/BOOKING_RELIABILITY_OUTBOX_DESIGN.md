@@ -1,6 +1,6 @@
 # Booking reliability and transactional outbox design
 
-Status: design/audit only. No runtime behavior is changed by this document.
+Status: partially implemented on `platform/ru-adaptation`. Booking audit writes are now part of the shared booking transactions; durable event/integration delivery remains outstanding.
 
 ## Scope
 
@@ -121,3 +121,42 @@ Implemented:
 - The same integration file checks that concurrent repeated `enqueueJob()` calls with one dedupe key produce exactly one row.
 
 This integration test has been committed but has **not yet run**. The CI workflow currently has no reported run for the branch; do not treat the test as verified until CI or a controlled local test database reports its result.
+
+
+## Booking audit foundation — implemented, verification pending
+
+The first implementation slice adds `booking_audit_logs` and migration
+`0002_booking_audit_logs.sql`. The table records tenant, booking, actor type,
+optional actor user ID, source channel, action, operational before/after state,
+request correlation ID, and timestamp. It is indexed by booking/time and
+tenant/time.
+
+The shared booking service writes the audit row in the SAME PostgreSQL
+transaction as:
+- booking creation;
+- public rescheduling;
+- non-time updates, including payment/status changes;
+- cancellation.
+
+The operational snapshot intentionally excludes guest email/phone, free-form
+notes, answers, cancellation/reschedule tokens, and payment-provider IDs.
+
+Actor attribution is wired for public creation/reschedule/cancel, client-portal
+manual creation/update/refund, agency manual creation, MCP cancellation/update,
+and Stripe webhook transitions. Service calls without explicit context are
+recorded as `system` / `system` rather than left unaudited.
+
+Integration assertions were added for portal-created and portal-cancelled
+bookings, including actor/channel and before/after state. They have NOT been
+executed yet; the latest commit currently has no reported GitHub Actions runs.
+
+### Remaining reliability work
+
+This audit table is not yet the transactional outbox. Existing post-commit
+calendar, Zoom, email, and `emitEvent()` calls can still be lost between the
+booking commit and external dispatch. The next implementation must add a
+transactionally enqueued event-delivery job, remove duplicate legacy event
+emissions only after the worker is wired, and give calendar/conference/email
+effects independent idempotency/reconciliation. Do not describe the current
+booking integration delivery as durable until that work and its tests are
+complete.
