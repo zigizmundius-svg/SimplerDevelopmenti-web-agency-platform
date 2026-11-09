@@ -141,7 +141,7 @@ async function writeBookingCalendarSyncJob(
     clientId: booking.clientId,
     type: 'booking.calendar_sync',
     payload: { bookingId: booking.id },
-    dedupeKey: `booking.calendar_sync:${booking.id}:${revision}`,
+    dedupeKey: `booking.calendar_sync:${booking.id}:${revision}:${booking.status}:${booking.startTime.getTime()}`,
   }).onConflictDoNothing({ target: internalJobs.dedupeKey });
 }
 
@@ -166,7 +166,7 @@ async function writeBookingEmailJobs(
         ...(times?.startTime ? { startTime: times.startTime.toISOString() } : {}),
         ...(times?.endTime ? { endTime: times.endTime.toISOString() } : {}),
       },
-      dedupeKey: `booking.email:${kind}:${booking.id}:${recipient}:${revision}`,
+      dedupeKey: `booking.email:${kind}:${booking.id}:${recipient}:${revision}:${(times?.startTime ?? booking.startTime).getTime()}`,
     }).onConflictDoNothing({ target: internalJobs.dedupeKey });
   }
 }
