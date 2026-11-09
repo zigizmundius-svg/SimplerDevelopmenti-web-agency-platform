@@ -1,6 +1,6 @@
 # Booking reliability and transactional outbox design
 
-Status: partially implemented on `platform/ru-adaptation`. Booking audit writes are now part of the shared booking transactions; durable event/integration delivery remains outstanding.
+Status: partially implemented on `platform/ru-adaptation`. Booking audit rows and automation event-journal rows are now written in the same shared booking transactions. External calendar, conference, and email delivery is still post-commit and not yet durable.
 
 ## Scope
 
@@ -13,7 +13,7 @@ The next reliability pass covers booking creation, rescheduling, cancellation, p
 - `app/api/cron/process-internal-jobs/route.ts` drains the queue every minute. The worker uses a pending-to-running compare-and-set claim, lease recovery, bounded batches, and retries.
 - `internal_jobs` currently supports `pod.submit`, `email.campaign_send`, and `automation.delayed_action`.
 - `automation_jobs` is a separate automation-event journal. It is not a general-purpose outbox: it has no producer idempotency key and is not transactionally coupled to booking writes.
-- `emitEvent()` is intentionally fire-and-forget. It inserts into `automation_jobs` asynchronously and dispatches handlers in-process. A process can terminate between a booking commit and the journal insert.
+- `emitEvent()` remains fire-and-forget for non-booking domains. Booking create/reschedule/cancel and payment-confirmation transitions now insert their `automation_jobs` journal row inside the same transaction as the booking mutation, then dispatch the already-journaled event after commit. The existing retry cron remains the crash-recovery path.
 - `lib/booking/post-create.ts` currently performs Zoom/Google Calendar setup, guest/host email and automation emission after the booking transaction. Most integrations are best-effort; a failure is logged, not durably retried.
 - Cancellation integrations are also invoked after the cancellation transaction and are best-effort.
 - `agent_action_log` records MCP/automation/assistant tool activity; it is not a complete actor/channel audit trail for human booking operations.
@@ -150,13 +150,35 @@ Integration assertions were added for portal-created and portal-cancelled
 bookings, including actor/channel and before/after state. They have NOT been
 executed yet; the latest commit currently has no reported GitHub Actions runs.
 
+### Transactional booking automation journal — implemented, verification pending
+
+The shared booking service now inserts a row into `automation_jobs` in the same
+transaction as the booking mutation for:
+- `booking.guest_booked` on public and manual creation;
+- `booking.rescheduled` on public rescheduling;
+- `booking.cancelled` on cancellation/status transitions, including MCP and
+  Stripe-driven cancellation;
+- `booking.confirmed` when payment transitions from pending to paid.
+
+After commit, the service asks the automation engine to dispatch that exact
+journal row in-process. If the process stops before dispatch/completion, the
+existing `process-automation-jobs` cron can replay the still-pending row after
+its grace window. Legacy post-commit booking event emissions were removed from
+the public routes and post-create helpers to avoid duplicate automation runs.
+The legacy `source: 'manual'` value is preserved for portal/agency booking
+creation; the precise channel is also included separately.
+
+Integration assertions now check that portal creation and cancellation each
+produce exactly one matching automation journal row. These tests are
+committed but have NOT been executed.
+
 ### Remaining reliability work
 
-This audit table is not yet the transactional outbox. Existing post-commit
-calendar, Zoom, email, and `emitEvent()` calls can still be lost between the
-booking commit and external dispatch. The next implementation must add a
-transactionally enqueued event-delivery job, remove duplicate legacy event
-emissions only after the worker is wired, and give calendar/conference/email
-effects independent idempotency/reconciliation. Do not describe the current
-booking integration delivery as durable until that work and its tests are
-complete.
+This is a transactional automation-event journal, not yet durable delivery for
+all booking integrations. Google Calendar, Zoom, guest email, and host email
+still run in post-commit helpers or webhook routes. Their failures can still
+be logged and lost. The next implementation must move those effects onto the
+existing PostgreSQL `internal_jobs` queue (or a narrowly scoped effect ledger
+linked to it), enqueue them atomically with the booking transition, and give
+each provider operation independent idempotency/reconciliation. Do not claim
+exactly-once external delivery.
