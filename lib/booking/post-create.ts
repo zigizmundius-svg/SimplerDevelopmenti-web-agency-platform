@@ -16,9 +16,8 @@ type Booking = typeof bookings.$inferSelect;
 export async function publishManualBookingCreated(input: {
   page: BookingPage;
   booking: Booking;
-  actorUserId: number;
 }): Promise<{ meetingLink: string | null }> {
-  const { page, booking, actorUserId } = input;
+  const { page, booking } = input;
   const timezone = booking.timezone || page.timezone || 'UTC';
   let meetingLink: string | null = booking.meetingLink ?? null;
 
@@ -87,9 +86,8 @@ export async function publishBookingCancelled(input: {
   page: BookingPage;
   booking: Booking;
   actorUserId: number;
-  source: 'public' | 'portal' | 'agency' | 'mcp';
 }): Promise<void> {
-  const { page, booking, actorUserId, source } = input;
+  const { page, booking } = input;
   if (booking.googleEventId) {
     await deleteCalendarEvent(booking.clientId, booking.googleEventId).catch((error) => {
       console.warn('[booking] Calendar cancellation failed:', error);
