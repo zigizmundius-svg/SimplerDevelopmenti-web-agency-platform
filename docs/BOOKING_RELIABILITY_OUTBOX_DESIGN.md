@@ -117,7 +117,7 @@ A second audit found that `lib/db/schema/jobs.ts` declared `internal_jobs`, but 
 Implemented:
 - Added `drizzle/0001_internal_jobs.sql` with the table, tenant FK, unique dedupe key, and due-work index.
 - Registered the migration as journal entry 1.
-- Added `tests/integration/api/internal-jobs.test.ts`, which inserts expired leases into PostgreSQL and runs two drainers concurrently. It asserts exactly one retryable lease is reclaimed and exactly one exhausted lease is dead-lettered, with the expected attempt counts.
+- Added `tests/integration/api/internal-jobs.test.ts`, which inserts expired leases into PostgreSQL and runs two drainers concurrently through independent database pools (not the app's single-connection pool). It asserts exactly one retryable lease is reclaimed and exactly one exhausted lease is dead-lettered, with the expected attempt counts.
 - The same integration file checks that concurrent repeated `enqueueJob()` calls with one dedupe key produce exactly one row.
 
 This integration test has been committed but has **not yet run**. The CI workflow currently has no reported run for the branch; do not treat the test as verified until CI or a controlled local test database reports its result.
