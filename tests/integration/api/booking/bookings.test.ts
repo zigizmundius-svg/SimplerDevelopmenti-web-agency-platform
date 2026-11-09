@@ -551,3 +551,38 @@ describe('POST /api/portal/tools/booking/[id]/bookings/[bookingId]/refund @booki
     expect(row.status).toBe('confirmed');
   });
 });
+
+
+describe('booking audit retention @booking @portal', () => {
+  it('preserves audit history and clears the booking reference when a booking is deleted', async () => {
+    const ctx = await sessionForNewClientUser('bk-audit-retention');
+    await enableBookingService(ctx);
+    const page = await seedPage(ctx);
+    const booking = await seedBooking({ pageId: page.id, clientId: ctx.client.id });
+    const sql = getTestSql();
+
+    await sql`
+      INSERT INTO ${sql(TEST_SCHEMA)}.booking_audit_logs (
+        client_id, booking_id, actor_type, source, action, after_state
+      ) VALUES (
+        ${ctx.client.id}, ${booking.id}, 'system', 'system', 'created',
+        ${sql.json({ status: 'confirmed' })}
+      )
+    `;
+
+    await sql`DELETE FROM ${sql(TEST_SCHEMA)}.bookings WHERE id = ${booking.id}`;
+
+    const [audit] = await sql<{ client_id: number; booking_id: number | null; action: string }[]>`
+      SELECT client_id, booking_id, action
+      FROM ${sql(TEST_SCHEMA)}.booking_audit_logs
+      WHERE client_id = ${ctx.client.id}
+      ORDER BY id DESC
+      LIMIT 1
+    `;
+    expect(audit).toMatchObject({
+      client_id: ctx.client.id,
+      booking_id: null,
+      action: 'created',
+    });
+  });
+});
