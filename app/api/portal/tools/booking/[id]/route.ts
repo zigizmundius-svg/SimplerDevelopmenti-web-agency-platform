@@ -70,7 +70,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (body.checkinEnabled !== undefined) updates.checkinEnabled = body.checkinEnabled;
   if (body.active !== undefined) updates.active = body.active;
   if (body.googleCalendarSync !== undefined) updates.googleCalendarSync = body.googleCalendarSync;
-  if (body.conferenceType !== undefined) updates.conferenceType = body.conferenceType;
+  if (body.conferenceType !== undefined) {
+    const requestedConferenceType = String(body.conferenceType);
+    const allowedConferenceTypes = ['none', 'google_meet'];
+    const isUnchangedLegacyZoom = requestedConferenceType === 'zoom' && page.conferenceType === 'zoom';
+    if (!allowedConferenceTypes.includes(requestedConferenceType) && !isUnchangedLegacyZoom) {
+      return NextResponse.json({
+        success: false,
+        message: 'Zoom setup is deferred for the current platform release.',
+      }, { status: 400 });
+    }
+    updates.conferenceType = requestedConferenceType;
+  }
   if (body.styling !== undefined) updates.styling = body.styling;
   if (body.thumbnail !== undefined) updates.thumbnail = body.thumbnail || null;
   if (body.allowStaffSelection !== undefined) updates.allowStaffSelection = body.allowStaffSelection;
