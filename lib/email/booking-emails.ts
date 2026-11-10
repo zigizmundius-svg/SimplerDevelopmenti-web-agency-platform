@@ -151,9 +151,10 @@ function generateIcs(data: BookingEmailData): string {
   const dtStart = toIcsDate(data.startTime);
   const dtEnd = toIcsDate(data.endTime);
   const location = data.meetingLink || '';
-  const description = data.meetingLink
-    ? `Join: ${data.meetingLink}\\nCancel/Reschedule: ${BASE_URL}/book/cancel?token=${data.cancelToken}`
-    : `Cancel/Reschedule: ${BASE_URL}/book/cancel?token=${data.cancelToken}`;
+  const description = [
+    data.meetingLink ? `Join: ${data.meetingLink}` : null,
+    data.cancelToken ? `Cancel/Reschedule: ${BASE_URL}/book/cancel?token=${data.cancelToken}` : null,
+  ].filter(Boolean).join('\\n');
 
   return [
     'BEGIN:VCALENDAR',
@@ -477,7 +478,7 @@ export async function sendRescheduleEmail(data: {
   previousStartTime: Date;
   timezone: string;
   cancelToken: string | null;
-  rescheduleToken: string;
+  rescheduleToken: string | null;
   bookingSlug: string;
   duration: number;
   meetingLink?: string | null;
@@ -615,7 +616,7 @@ export async function sendHostCancellationNotification(input: {
  * guest can still cancel from inside the reminder.
  */
 export async function sendBookingReminder(data: BookingEmailData): Promise<void> {
-  const cancelUrl = `${BASE_URL}/book/cancel?token=${data.cancelToken}`;
+  const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
   const formattedStart = formatDateTime(data.startTime, data.timezone);
   const formattedEnd = formatTime(data.endTime, data.timezone);
   const accent = brandAccent(data.brand);
@@ -649,10 +650,10 @@ export async function sendBookingReminder(data: BookingEmailData): Promise<void>
       </tr>` : ''}
     </table>
 
-    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+    ${cancelUrl ? `<p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
       Can't make it?
       <a href="${cancelUrl}" style="color:${accent};text-decoration:none;">Cancel or reschedule</a>
-    </p>
+    </p>` : ''}
   `, `Reminder: your ${data.pageTitle} appointment is ${formattedStart}`, data.brand);
 
   try {
