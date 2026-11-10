@@ -126,6 +126,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       }
     }
   }
+  // Resolve the assignee and reject unavailable slots before loading pricing
+  // add-ons, discounts, or gift certificates. The shared create service repeats
+  // this validation under the page lock immediately before inserting the booking.
+  const hasVisitorStaffChoice = Boolean(staffId) && page.allowStaffSelection;
+  const visitorSelectedStaff = hasVisitorStaffChoice ? Number(staffId) : null;
+  if (hasVisitorStaffChoice && (!Number.isInteger(visitorSelectedStaff) || (visitorSelectedStaff ?? 0) <= 0)) {
+    return NextResponse.json({ success: false, message: 'Invalid staff selection' }, { status: 400 });
+  }
+  const assignedTo = hasVisitorStaffChoice
+    ? visitorSelectedStaff
+    : await resolveDefaultBookingAssignee(page, slotStart);
+  const autoAssignedUserId = visitorSelectedStaff
+    ? null
+    : (page.assignmentMode && page.assignmentMode !== 'fixed' ? assignedTo : null);
+  const slotValidation = await validateBookingSlot({
+    page, startTime: slotStart, requestedSeats: seats, groupSize, staffId: assignedTo,
+  });
+  if (!slotValidation.ok) {
+    return NextResponse.json({ success: false, message: slotValidation.message }, { status: slotValidation.status });
+  }
+
   // ─── CALCULATE TOTAL ──────────────────────────────────────────────────────
 
   // Base price
@@ -235,33 +256,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const rescheduleToken = crypto.randomBytes(32).toString('hex');
   const checkinCode = page.checkinEnabled ? generateCheckinCode() : null;
   const needsPayment = total > 0;
-
-  // Use the shared assignment resolver. A visitor-picked member is honored
-  // only when the page explicitly allows staff selection.
-  const hasVisitorStaffChoice = Boolean(staffId) && page.allowStaffSelection;
-  const visitorSelectedStaff = hasVisitorStaffChoice ? Number(staffId) : null;
-  if (hasVisitorStaffChoice && (!Number.isInteger(visitorSelectedStaff) || (visitorSelectedStaff ?? 0) <= 0)) {
-    return NextResponse.json({ success: false, message: 'Invalid staff selection' }, { status: 400 });
-  }
-  const assignedTo = hasVisitorStaffChoice
-    ? visitorSelectedStaff
-    : await resolveDefaultBookingAssignee(page, slotStart);
-  const autoAssignedUserId = visitorSelectedStaff
-    ? null
-    : (page.assignmentMode && page.assignmentMode !== 'fixed' ? assignedTo : null);
-
-  // Fast feedback for the visitor; createBookingRecord repeats this validation
-  // under the page lock immediately before the insert.
-  const slotValidation = await validateBookingSlot({
-    page,
-    startTime: slotStart,
-    requestedSeats: seats,
-    groupSize,
-    staffId: assignedTo,
-  });
-  if (!slotValidation.ok) {
-    return NextResponse.json({ success: false, message: slotValidation.message }, { status: slotValidation.status });
-  }
 
   let booking: typeof bookings.$inferSelect;
   const attendeeRows = isGroupBooking
