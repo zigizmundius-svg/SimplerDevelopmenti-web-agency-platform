@@ -109,6 +109,8 @@ export async function deliverBookingEmail(
         bookingSlug: page.slug,
         duration: page.duration,
         meetingLink: booking.meetingLink,
+        bookingId: booking.id,
+        createdAt: booking.createdAt,
         brand,
       };
       await sendGuestConfirmation(data, idempotencyKey);
@@ -139,6 +141,8 @@ export async function deliverBookingEmail(
       bookingSlug: page.slug,
       duration: page.duration,
       meetingLink: booking.meetingLink,
+      bookingId: booking.id,
+      createdAt: booking.createdAt,
       brand,
     }, idempotencyKey);
   } else {
