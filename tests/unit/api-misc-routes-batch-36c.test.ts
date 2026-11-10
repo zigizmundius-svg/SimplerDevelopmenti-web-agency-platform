@@ -233,6 +233,17 @@ vi.mock('@/lib/db', () => {
       insert(tableRef: unknown) {
         return buildInsert(tableRef);
       },
+      transaction<T>(callback: (tx: {
+        select: () => ReturnType<typeof buildSelect>;
+        insert: (tableRef: unknown) => ReturnType<typeof buildInsert>;
+        delete: (tableRef: unknown) => ReturnType<typeof buildDelete>;
+      }) => Promise<T>) {
+        return callback({
+          select: () => buildSelect(),
+          insert: (tableRef) => buildInsert(tableRef),
+          delete: (tableRef) => buildDelete(tableRef),
+        });
+      },
     },
   };
 });
