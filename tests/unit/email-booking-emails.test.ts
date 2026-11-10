@@ -170,11 +170,11 @@ describe('sendGuestConfirmation', () => {
     expect(payload.html).toContain('token=cancel-tok-abc');
   });
 
-  it('does not throw when resend.emails.send rejects (logs instead)', async () => {
+  it('rethrows Resend failures so the durable queue can retry', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     sendMock.mockRejectedValueOnce(new Error('SMTP down'));
 
-    await expect(sendGuestConfirmation(baseData())).resolves.toBeUndefined();
+    await expect(sendGuestConfirmation(baseData())).rejects.toThrow('SMTP down');
     expect(errSpy).toHaveBeenCalledWith(
       'Failed to send guest confirmation email:',
       expect.any(Error),
@@ -243,13 +243,13 @@ describe('sendHostNotification', () => {
     expect(decoded).toContain('ATTENDEE;CN=Alice Example;RSVP=TRUE:mailto:alice@example.test');
   });
 
-  it('does not throw when resend rejects (logs instead)', async () => {
+  it('rethrows Resend failures so the durable queue can retry', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     sendMock.mockRejectedValueOnce(new Error('boom'));
 
     await expect(
       sendHostNotification('host@example.test', baseData()),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('boom');
     expect(errSpy).toHaveBeenCalledWith(
       'Failed to send host notification email:',
       expect.any(Error),
@@ -327,7 +327,7 @@ describe('sendCancellationEmail', () => {
         'UTC',
         'discovery-call',
       ),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('nope');
     expect(errSpy).toHaveBeenCalledWith(
       'Failed to send cancellation email:',
       expect.any(Error),
