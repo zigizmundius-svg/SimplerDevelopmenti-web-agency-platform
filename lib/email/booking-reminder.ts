@@ -20,7 +20,7 @@ import {
  * `loadBookingBrand(bookingPageId)`). Cancellation token is included so the
  * guest can still cancel from inside the reminder.
  */
-export async function sendBookingReminder(data: BookingEmailData): Promise<void> {
+export async function sendBookingReminder(data: BookingEmailData, idempotencyKey?: string): Promise<void> {
   const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
   const formattedStart = formatDateTime(data.startTime, data.timezone);
   const formattedEnd = formatTime(data.endTime, data.timezone);
@@ -67,7 +67,7 @@ export async function sendBookingReminder(data: BookingEmailData): Promise<void>
       to: data.guestEmail,
       subject: `Reminder: ${data.pageTitle} — ${formattedStart}`,
       html,
-    });
+    }, idempotencyKey);
   } catch (err) {
     console.error('Failed to send booking reminder email:', err);
     throw err; // Re-throw so the cron records a failure instead of a silent skip.
