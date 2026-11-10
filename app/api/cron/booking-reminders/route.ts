@@ -121,6 +121,9 @@ async function _GET(req: Request) {
             eq(bookings.id, candidate.bookingId),
             eq(bookings.status, 'confirmed'),
             isNull(bookings.reminderSentAt),
+            // Do not start delivery if this worker's lease was reclaimed while
+            // it was loading booking/brand data.
+            eq(bookings.reminderClaimedAt, claimAt),
             gt(bookings.startTime, windowMin),
             lt(bookings.startTime, windowMax),
           ),
