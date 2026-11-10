@@ -110,6 +110,8 @@ describe('GET /api/cron/booking-reminders', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    dbSelectMock.mockReset();
+    dbUpdateMock.mockReset();
     sendBookingReminderMock.mockResolvedValue(undefined);
     loadBookingBrandMock.mockResolvedValue({});
   });
