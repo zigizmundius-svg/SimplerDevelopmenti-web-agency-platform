@@ -423,6 +423,10 @@ export const bookings = pgTable('bookings', {
   index('bookings_client_idx').on(t.clientId),
   index('bookings_booking_page_idx').on(t.bookingPageId),
   index('bookings_start_status_idx').on(t.startTime, t.status),
+  // Partial index for the hourly pre-booking reminder scan.
+  index('bookings_reminder_due_idx')
+    .on(t.startTime)
+    .where(sql`${t.status} = 'confirmed' AND ${t.reminderSentAt} IS NULL`),
   // Concurrency guard: at most one non-cancelled booking per (page, start_time)
   // on exclusive (1:1) slots. Closes the check-then-insert double-booking race
   // that a SELECT-then-INSERT cannot — two simultaneous requests both pass the
