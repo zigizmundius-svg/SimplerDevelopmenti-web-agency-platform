@@ -297,12 +297,9 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
         active: z.boolean().optional(),
       },
     },
-    async ({ id, startTime, endTime, ...rest }) => {
+    async ({ id, ...rest }) => {
       if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
       if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
-      if (startTime !== undefined || endTime !== undefined) {
-        return json({ error: 'Rescheduling through this integration is temporarily disabled until shared availability validation is available. Use the booking calendar.' });
-      }
       const [existing] = await db.select({ id: bookingPages.id, title: bookingPages.title })
         .from(bookingPages)
         .where(and(eq(bookingPages.id, id), eq(bookingPages.clientId, clientId)))
@@ -443,9 +440,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
           pageId: existing.bookingPageId,
           status: 'cancelled',
           actor: { actorType: 'mcp', source: 'mcp' },
-          notes: reason
-            ? (prior ? `${prior}\n[cancelled] ${reason}` : `[cancelled] ${reason}`)
-            : undefined,
+          ...(reason ? { notes: prior ? `${prior}\n[cancelled] ${reason}` : `[cancelled] ${reason}` } : {}),
         });
         const [page] = await db.select().from(bookingPages)
           .where(and(eq(bookingPages.id, existing.bookingPageId), eq(bookingPages.clientId, clientId))).limit(1);
@@ -477,10 +472,7 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
     async (args) => {
       if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
       if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
-      const { id, ...rest } = args as typeof args & { startTime?: string; endTime?: string };
-      if (rest.startTime !== undefined || rest.endTime !== undefined) {
-        return json({ error: 'Rescheduling through this integration is temporarily disabled until shared availability validation is available. Use the booking calendar.' });
-      }
+      const { id, ...rest } = args;
       const [existing] = await db.select({
         id: bookings.id,
         bookingPageId: bookings.bookingPageId,
