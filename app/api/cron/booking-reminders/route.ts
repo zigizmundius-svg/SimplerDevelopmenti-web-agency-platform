@@ -4,7 +4,8 @@ import { isAuthorizedCron } from '@/lib/cron-auth';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { bookings, bookingPages } from '@/lib/db/schema';
-import { sendBookingReminder, loadBookingBrand } from '@/lib/email/booking-emails';
+import { sendBookingReminder } from '@/lib/email/booking-reminder';
+import { loadBookingBrand } from '@/lib/email/booking-emails';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
