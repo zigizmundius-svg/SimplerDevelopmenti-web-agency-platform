@@ -656,12 +656,12 @@ describe('POST /api/stripe/webhook/booking — payment_intent.payment_failed', (
     const { POST } = await import('@/app/api/stripe/webhook/booking/route');
     const res = await POST(makeRequest('{}'));
     expect(res.status).toBe(200);
-    const cancelled = dbState.updates.find((u) => u.table === 'bookings');
-    expect(cancelled).toBeDefined();
-    const v = cancelled!.values as { status: string; paymentStatus: string; cancelledAt: Date };
-    expect(v.status).toBe('cancelled');
-    expect(v.paymentStatus).toBe('free');
-    expect(v.cancelledAt).toBeInstanceOf(Date);
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 100,
+      status: 'cancelled',
+      paymentStatus: 'free',
+      actor: expect.objectContaining({ source: 'stripe' }),
+    }));
   });
 
   it('does nothing when bookingId is missing', async () => {
