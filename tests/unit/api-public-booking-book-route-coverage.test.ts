@@ -190,6 +190,7 @@ vi.mock('@/lib/booking/service', () => ({
     }
     return { ok: true, endTime: new Date(startTime.getTime() + Number(page.duration ?? 30) * 60_000) };
   },
+  updateBookingRecord: async () => ({}),
   createBookingRecord: async (input: {
     page: Row;
     startTime: Date;
@@ -413,11 +414,12 @@ describe('POST — basic free booking with proper mocks', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.paymentStatus).toBe('free');
-    expect(emitEvent).toHaveBeenCalledWith('booking.guest_booked', 7, 0, expect.any(Object));
-    expect(sendGuestConfirmation).toHaveBeenCalled();
+    expect(emitEvent).not.toHaveBeenCalled();
+    expect(sendGuestConfirmation).not.toHaveBeenCalled();
+    expect(insertCalls.some((call) => (call.table as { __table?: string }).__table === 'bookings')).toBe(true);
   });
 
-  it('sends host notification when resolveHostNotificationEmail returns an address', async () => {
+  it('defers host notification to the transactional email queue', async () => {
     selectQueue.push([basePage()]);
     selectQueue.push([]);
     insertReturns.push([{ id: 1, guestName: 'A', guestEmail: 'a@b.com' }]);
@@ -427,9 +429,8 @@ describe('POST — basic free booking with proper mocks', () => {
       makeReq({ name: 'A', email: 'a@b.com', startTime: futureIso() }),
       makeParams(),
     );
-    // Wait for the fire-and-forget IIFE to settle
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(sendHostNotification).toHaveBeenCalledWith('host@example.com', expect.any(Object));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sendHostNotification).not.toHaveBeenCalled();
   });
 
   it('does NOT send host notification when resolveHostNotificationEmail returns null', async () => {
