@@ -125,6 +125,7 @@ describe('GET /api/cron/booking-reminders', () => {
 
     expect(response.status).toBe(200);
     expect(sendBookingReminderMock).toHaveBeenCalledTimes(1);
+    expect(sendBookingReminderMock.mock.calls[0]?.[1]).toBe('booking-reminder/101');
     expect(updateSets).toHaveLength(2);
     expect(updateSets[0]?.reminderClaimedAt).toBeInstanceOf(Date);
     // The second read must prove this worker still owns the lease before it
