@@ -41,7 +41,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return NextResponse.json({ success: false, message: 'Invalid JSON body' }, { status: 400 });
   }
-  const { status, notes, assignedTo } = body;
+  const { status, notes } = body;
+  const rawAssignedTo = (body as { assignedTo?: unknown }).assignedTo;
+  const assignedTo = rawAssignedTo === '' ? null : rawAssignedTo;
   const allowedStatuses = ['confirmed', 'cancelled', 'completed', 'no_show'];
 
   if (status !== undefined && !allowedStatuses.includes(status)) {
