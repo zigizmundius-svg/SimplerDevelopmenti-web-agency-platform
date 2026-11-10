@@ -76,7 +76,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true });
       }
 
-      // Update booking payment status
+      // Read the pending booking and its page before committing the paid
+      // transition. Conference providers may persist a meetingLink as part of
+      // event creation; the confirmation outbox must only be released after
+      // that link is available, otherwise a fast worker can send an incomplete
+      // confirmation email.
       const [booking] = await db.select().from(bookings)
         .where(eq(bookings.id, bookingId)).limit(1);
 
@@ -84,19 +88,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true }); // idempotent
       }
 
-      await updateBookingRecord({
-        bookingId: booking.id,
-        pageId: booking.bookingPageId,
-        paymentStatus: 'paid',
-        paidAt: new Date(),
-        actor: { actorType: 'webhook', source: 'stripe' },
-      });
-
-      // Get booking page for conference/calendar settings
+      // Get booking page for conference/calendar settings.
       const [page] = await db.select().from(bookingPages)
         .where(eq(bookingPages.id, booking.bookingPageId)).limit(1);
 
       if (!page) {
+        await updateBookingRecord({
+          bookingId: booking.id,
+          pageId: booking.bookingPageId,
+          paymentStatus: 'paid',
+          paidAt: new Date(),
+          actor: { actorType: 'webhook', source: 'stripe' },
+        });
         return NextResponse.json({ received: true });
       }
 
@@ -144,16 +147,20 @@ export async function POST(req: Request) {
         }
       }
 
-      if (meetingLink) {
-        await updateBookingRecord({
-          bookingId: booking.id,
-          pageId: booking.bookingPageId,
-          meetingLink,
-          actor: { actorType: 'webhook', source: 'stripe' },
-        });
-      }
+      // Commit payment and the meeting link together. This transaction writes
+      // the confirmation email jobs, so workers cannot observe "paid" before
+      // the provider-generated meeting link has been persisted.
+      await updateBookingRecord({
+        bookingId: booking.id,
+        pageId: booking.bookingPageId,
+        paymentStatus: 'paid',
+        paidAt: new Date(),
+        ...(meetingLink ? { meetingLink } : {}),
+        actor: { actorType: 'webhook', source: 'stripe' },
+      });
 
-      // Confirmation emails are enqueued by updateBookingRecord in the payment transaction.
+      // Confirmation emails are enqueued by updateBookingRecord only after
+      // conference creation has completed.
 
 
     }
