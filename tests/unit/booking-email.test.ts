@@ -98,6 +98,14 @@ describe('deliverBookingEmail', () => {
     expect(email.guestConfirmation).not.toHaveBeenCalled();
   });
 
+  it('passes the persisted idempotency key to the email provider wrapper', async () => {
+    const idempotencyKey = 'booking-email/confirmation/35/guest/1785530400000/1796119200000';
+    await deliverBookingEmail({ ...basePayload, idempotencyKey }, sequentialDb(bookingRow()));
+
+    expect(email.guestConfirmation).toHaveBeenCalledTimes(1);
+    expect(email.guestConfirmation.mock.calls[0][1]).toBe(idempotencyKey);
+  });
+
   it('does not send a reschedule notification for an obsolete time', async () => {
     await deliverBookingEmail({
       ...basePayload,
