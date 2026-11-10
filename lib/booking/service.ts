@@ -154,6 +154,7 @@ async function writeBookingEmailJobs(
 ): Promise<void> {
   const revision = booking.updatedAt?.getTime() ?? booking.startTime.getTime();
   for (const recipient of ['guest', 'host'] as const) {
+    const idempotencyKey = `booking-email/${kind}/${booking.id}/${recipient}/${revision}/${(times?.startTime ?? booking.startTime).getTime()}`;
     await tx.insert(internalJobs).values({
       clientId: booking.clientId,
       type: 'booking.email',
@@ -162,11 +163,12 @@ async function writeBookingEmailJobs(
         clientId: booking.clientId,
         kind,
         recipient,
+        idempotencyKey,
         ...(times?.previousStartTime ? { previousStartTime: times.previousStartTime.toISOString() } : {}),
         ...(times?.startTime ? { startTime: times.startTime.toISOString() } : {}),
         ...(times?.endTime ? { endTime: times.endTime.toISOString() } : {}),
       },
-      dedupeKey: `booking.email:${kind}:${booking.id}:${recipient}:${revision}:${(times?.startTime ?? booking.startTime).getTime()}`,
+      dedupeKey: idempotencyKey,
     }).onConflictDoNothing({ target: internalJobs.dedupeKey });
   }
 }
