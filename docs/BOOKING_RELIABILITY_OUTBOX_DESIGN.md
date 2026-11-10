@@ -172,7 +172,7 @@ Integration assertions now check that portal creation and cancellation each
 produce exactly one matching automation journal row. These tests are
 committed but have NOT been executed.
 
-### Booking effects queue — implemented, verification pending
+### Booking effects queue — implemented
 
 The existing PostgreSQL `internal_jobs` queue now handles:
 - `booking.calendar_sync`: transactionally enqueued by booking create, reschedule, cancellation, and payment-confirmation transitions. The worker reads the booking's current state and reconciles Google Calendar, so delayed jobs do not replay stale time snapshots. Deterministic Google event IDs protect create retries; missing/cancelled bookings are handled without restoring stale appointments.
@@ -198,7 +198,7 @@ The in-process dispatcher and retry cron must compete for the same atomic `pendi
 
 Google Calendar booking event creation now uses a deterministic event ID derived from the booking's database ID (base32hex, valid for Google Calendar event IDs). If Google creates the event but the application fails before saving `googleEventId`, a retry receives a conflict and reads the already-created event instead of inserting a duplicate. Google Meet conference creation also uses a stable request ID. Deleting an event that is already absent is treated as success.
 
-Calendar create/update/delete operations are now reconciled by the `booking.calendar_sync` internal job. Booking emails are dispatched by separate `booking.email` jobs per recipient. Both job families are enqueued in the same transaction as the booking state change. These paths are implemented but remain unverified by typecheck, Vitest, and CI.
+Calendar create/update/delete operations are now reconciled by the `booking.calendar_sync` internal job. Booking emails are dispatched by separate `booking.email` jobs per recipient. Both job families are enqueued in the same transaction as the booking state change. The booking calendar and email worker paths pass the current unit, typecheck, build, and CI checks. Database-backed integration coverage remains a separate verification item.
 
 
 ## Worker regression tests added
@@ -215,7 +215,7 @@ Email-worker unit coverage exercises:
 - propagation of provider failures so the queue can retry;
 - skipping host delivery when no host notification address is configured.
 
-These tests are committed but have NOT been executed. They must be run with the full unit suite and typecheck before the branch is considered verified.
+These worker unit tests are included in the CI unit shards and have passed in the current green shard run. Database-backed integration tests still need to be run against PostgreSQL before production rollout.
 
 
 ### Tenant-bound worker reads
@@ -276,3 +276,10 @@ cascade-delete with the client, deleting the client first would destroy pending
 cleanup work and credentials. The API/UI must block final deletion while
 pending/running/dead-letter external cleanup remains, unless an explicit
 operator-approved abandonment path is recorded.
+
+
+### Pre-booking reminder concurrency
+
+The hourly `/api/cron/booking-reminders` route now uses `bookings.reminder_claimed_at` as a 30-minute lease. Candidate IDs are read first; each booking must then win a conditional PostgreSQL UPDATE before guest details are loaded or email is sent. The completion update stamps `reminder_sent_at` and clears the lease only while the worker still owns the exact claim timestamp. Delivery failures release the worker's own claim immediately; crashed workers are recoverable after lease expiry. This prevents concurrent cron invocations from sending the same reminder simultaneously.
+
+External email delivery remains at-least-once: if the provider accepts an email and the process dies before the database records success, a later retry may send it again. The lease closes the concurrent-worker race but cannot make an external provider call and a PostgreSQL write one atomic transaction.
