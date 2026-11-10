@@ -773,7 +773,7 @@ describe('POST /api/portal/tools/booking/[id]/bookings/[bookingId]/refund', () =
       payment_intent: 'pi_part',
       amount: 300,
     });
-    expect(updateCalls[0].patch.paymentStatus).toBe('refunded');
+    expect(updateCalls[0].patch.paymentStatus).toBe('paid'); // partial refunds do not change payment status
     expect(updateCalls[0].patch).not.toHaveProperty('status'); // DB status remains confirmed
     expect(updateCalls[0].patch).not.toHaveProperty('cancelledAt');
   });
