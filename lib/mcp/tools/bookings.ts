@@ -472,6 +472,9 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
     async (args) => {
       if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
       if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
+      if ('startTime' in args || 'endTime' in args) {
+        return json({ error: 'Rescheduling is temporarily disabled for this tool.' });
+      }
       const { id, ...rest } = args;
       const [existing] = await db.select({
         id: bookings.id,
