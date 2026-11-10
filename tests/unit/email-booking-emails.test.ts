@@ -74,13 +74,25 @@ afterEach(() => {
 
 describe('sendGuestConfirmation', () => {
   it('sends a confirmation email with the guest as the recipient', async () => {
-    await sendGuestConfirmation(baseData());
+    await sendGuestConfirmation(baseData(), 'booking-email/confirmation/101/guest/1/1781532000000');
 
     expect(sendMock).toHaveBeenCalledTimes(1);
     const payload = sendMock.mock.calls[0][0];
+    expect(sendMock.mock.calls[0][1]).toEqual({ idempotencyKey: 'booking-email/confirmation/101/guest/1/1781532000000' });
     expect(payload.to).toBe('alice@example.test');
     expect(payload.subject).toBe('Confirmed: Discovery Call');
     expect(payload.from).toMatch(/^Booking Confirmation </);
+  });
+
+  it('creates a deterministic calendar attachment for retried confirmations', async () => {
+    const data = { ...baseData(), bookingId: 101, createdAt: new Date('2026-06-01T10:00:00.000Z') };
+    await sendGuestConfirmation(data, 'booking-email/confirmation/101/guest/1');
+    await sendGuestConfirmation(data, 'booking-email/confirmation/101/guest/1');
+
+    const first = sendMock.mock.calls[0][0].attachments[0].content;
+    const second = sendMock.mock.calls[1][0].attachments[0].content;
+    expect(second).toBe(first);
+    expect(sendMock.mock.calls[1][1]).toEqual({ idempotencyKey: 'booking-email/confirmation/101/guest/1' });
   });
 
   it('renders the page title, duration, and a cancel link in the HTML body', () => {
