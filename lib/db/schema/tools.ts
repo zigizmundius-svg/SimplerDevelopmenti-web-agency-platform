@@ -405,10 +405,11 @@ export const bookings = pgTable('bookings', {
   checkinCode: varchar('checkin_code', { length: 10 }),
   checkedInAt: timestamp('checked_in_at'),
   checkedInBy: integer('checked_in_by').references(() => users.id, { onDelete: 'set null' }),
-  // Reminder dispatch — set when /api/cron/booking-reminders sends a
-  // pre-booking nudge to the guest. NULL = no reminder sent yet. The cron
-  // is idempotent: it only picks rows where this column is NULL.
+  // Reminder dispatch state. A claim is a short lease held while the
+  // external email provider is called; stale claims can be reclaimed after
+  // the worker crashes. reminderSentAt is set only after successful delivery.
   reminderSentAt: timestamp('reminder_sent_at'),
+  reminderClaimedAt: timestamp('reminder_claimed_at'),
   // Reschedule support (Phase 1)
   rescheduleToken: varchar('reschedule_token', { length: 64 }).unique(),
   previousStartTime: timestamp('previous_start_time'),
