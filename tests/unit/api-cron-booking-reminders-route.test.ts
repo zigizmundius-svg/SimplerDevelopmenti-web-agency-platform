@@ -83,7 +83,7 @@ function configureDb({ claimWon = true } = {}) {
   const candidateFrom = vi.fn(() => ({ where: candidateWhere }));
 
   const detailLimit = vi.fn().mockResolvedValue([booking]);
-  const detailWhere = vi.fn(() => ({ limit: detailLimit }));
+  const detailWhere = vi.fn((condition: unknown) => ({ limit: detailLimit, condition }));
   const detailJoin = vi.fn(() => ({ where: detailWhere }));
   const detailFrom = vi.fn(() => ({ innerJoin: detailJoin }));
 
@@ -127,6 +127,10 @@ describe('GET /api/cron/booking-reminders', () => {
     expect(sendBookingReminderMock).toHaveBeenCalledTimes(1);
     expect(updateSets).toHaveLength(2);
     expect(updateSets[0]?.reminderClaimedAt).toBeInstanceOf(Date);
+    // The second read must prove this worker still owns the lease before it
+    // loads/sends the reminder; otherwise a reclaimed stale worker can race.
+    const detailCondition = JSON.stringify((dbSelectMock.mock.results[1]?.value as { from: () => { innerJoin: () => { where: ReturnType<typeof vi.fn> } } }).from().innerJoin().where.mock.calls[0]?.[0]);
+    expect(detailCondition).toContain('bookings.reminderClaimedAt');
     expect(updateSets[1]?.reminderSentAt).toBeInstanceOf(Date);
     expect(updateSets[1]?.reminderClaimedAt).toBeNull();
     expect(json.data).toMatchObject({ scanned: 1, claimed: 1, sent: 1, failed: 0 });
