@@ -513,7 +513,12 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
         (u.values as { meetingLink?: string }).meetingLink === 'https://meet.example/abc',
     );
     expect(linkUpdate).toBeDefined();
-    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({ meetingLink: 'https://meet.example/abc' }));
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      paymentStatus: 'paid',
+      meetingLink: 'https://meet.example/abc',
+    }));
+    expect(meetingState.createCalendarEvent.mock.invocationCallOrder[0])
+      .toBeLessThan(updateBookingRecordMock.mock.invocationCallOrder[0]);
     expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
   });
 
