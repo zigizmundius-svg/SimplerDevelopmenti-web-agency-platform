@@ -20,9 +20,8 @@ export const runtime = 'nodejs';
  *   AND status = 'confirmed'
  *
  * The window is wide on purpose so that even if the cron runs hourly, we
- * never miss a reminder. The de-dupe is enforced by the `reminder_sent_at`
- * column + the partial index on (start_time) WHERE reminder_sent_at IS NULL
- * defined in drizzle/0113_booking_reminder_sent_at.sql.
+ * never miss a reminder. The candidate scan uses the partial index on
+ * (start_time) for confirmed bookings that have not yet been reminded.
  *
  * Concurrency: each candidate is atomically claimed before sending. The
  * claim expires after 30 minutes so a crashed worker can be recovered by the
@@ -31,8 +30,8 @@ export const runtime = 'nodejs';
  *
  * Auth: Vercel cron header OR `Authorization: Bearer ${CRON_SECRET}`.
  *
- * Schedule: every 60 minutes. (Vercel cron config lives outside this PR —
- * add `/api/cron/booking-reminders` with `0 * * * *` once this lands.)
+ * Schedule: every 60 minutes via `vercel.json`. Self-hosted deployments must
+ * register the same route in their external scheduler.
  */
 
 const REMINDER_LEAD_HOURS_MIN = 23; // skip reminders for bookings starting in <23h
