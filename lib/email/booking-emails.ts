@@ -476,7 +476,7 @@ export async function sendRescheduleEmail(data: {
   newEndTime: Date;
   previousStartTime: Date;
   timezone: string;
-  cancelToken: string;
+  cancelToken: string | null;
   rescheduleToken: string;
   bookingSlug: string;
   duration: number;
@@ -484,7 +484,7 @@ export async function sendRescheduleEmail(data: {
   hostEmail?: string | null;
   brand?: BookingBrand | null;
 }, recipient: 'guest' | 'host' | 'both' = 'both'): Promise<void> {
-  const cancelUrl = `${BASE_URL}/book/cancel?token=${data.cancelToken}`;
+  const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
   const formattedNew = formatDateTime(data.newStartTime, data.timezone);
   const formattedNewEnd = formatTime(data.newEndTime, data.timezone);
   const formattedPrevious = formatDateTime(data.previousStartTime, data.timezone);
@@ -525,10 +525,10 @@ export async function sendRescheduleEmail(data: {
       </tr>` : ''}
     </table>
 
-    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+    ${cancelUrl ? `<p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
       Need to make changes?
       <a href="${cancelUrl}" style="color:${accent};text-decoration:none;">Cancel</a>
-    </p>
+    </p>` : ''}
   `, `Your ${data.pageTitle} appointment has been rescheduled to ${formattedNew}`, data.brand);
 
   try {
