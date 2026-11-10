@@ -4,11 +4,11 @@ import { bookingPages, brandingProfiles, brandingMessaging, clients } from '@/li
 import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
-const BASE_URL = process.env.NEXTAUTH_URL || 'https://simplerdevelopment.com';
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'bookings@simplerdevelopment.com';
+export const BASE_URL = process.env.NEXTAUTH_URL || 'https://simplerdevelopment.com';
+export const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'bookings@simplerdevelopment.com';
 /** Resend may resolve with an { error } result instead of throwing. Normalize
  * both failure modes so the durable queue can retry rejected deliveries. */
-async function sendBookingEmail(
+export async function sendBookingEmail(
   message: Parameters<typeof resend.emails.send>[0],
 ): Promise<void> {
   const result = await resend.emails.send(message);
@@ -184,7 +184,7 @@ function generateIcs(data: BookingEmailData): string {
   ].filter(Boolean).join('\r\n');
 }
 
-function formatDateTime(date: Date, timezone: string): string {
+export function formatDateTime(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -197,7 +197,7 @@ function formatDateTime(date: Date, timezone: string): string {
   }).format(date);
 }
 
-function formatTime(date: Date, timezone: string): string {
+export function formatTime(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit',
@@ -206,11 +206,11 @@ function formatTime(date: Date, timezone: string): string {
 }
 
 /** Safe HTML escape for any brand-derived value we drop into the email. */
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function bookingEmailHtml(content: string, previewText: string, brand?: BookingBrand | null): string {
+export function bookingEmailHtml(content: string, previewText: string, brand?: BookingBrand | null): string {
   // Header — wide logo if available, fallback to wordmark in the brand
   // primary color. Skip the header entirely when no brand snapshot is given
   // so legacy callers retain the prior look.
@@ -274,7 +274,7 @@ function bookingEmailHtml(content: string, previewText: string, brand?: BookingB
 }
 
 /** Resolve the brand-aware accent (e.g. for buttons + CTAs) with a safe fallback. */
-function brandAccent(brand?: BookingBrand | null): string {
+export function brandAccent(brand?: BookingBrand | null): string {
   return brand?.primaryColor ?? brand?.accentColor ?? '#2563eb';
 }
 
@@ -603,68 +603,4 @@ export async function sendHostCancellationNotification(input: {
     subject: `Booking Cancelled: ${input.guestName} — ${input.pageTitle}`,
     html: `<p><strong>${esc(input.guestName)}</strong> cancelled their ${esc(input.pageTitle)} appointment on ${formattedStart}.</p>`,
   });
-}
-
-/**
- * Send a pre-booking reminder. Triggered by `/api/cron/booking-reminders` on
- * rows whose `reminder_sent_at` is NULL and whose `start_time` is inside the
- * send window (≈ 24h ahead). One reminder per booking — the cron updates
- * `reminder_sent_at` after a successful send so subsequent runs skip.
- *
- * Brand-aware via `data.brand` (callers should pass the result of
- * `loadBookingBrand(bookingPageId)`). Cancellation token is included so the
- * guest can still cancel from inside the reminder.
- */
-export async function sendBookingReminder(data: BookingEmailData): Promise<void> {
-  const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
-  const formattedStart = formatDateTime(data.startTime, data.timezone);
-  const formattedEnd = formatTime(data.endTime, data.timezone);
-  const accent = brandAccent(data.brand);
-  const heading = data.brand?.textColor ?? '#111827';
-  const fromBrandName = data.brand?.companyName ?? 'SimplerDevelopment';
-
-  const html = bookingEmailHtml(`
-    <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:0.18em;color:${accent};text-transform:uppercase;">Friendly reminder</p>
-    <h1 style="margin:0 0 8px;font-size:24px;color:${heading};">Your appointment is coming up</h1>
-    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Hi ${esc(data.guestName)} — looking forward to seeing you ${formattedStart}.</p>
-
-    <table role="presentation" width="100%" style="background:#f9fafb;border-radius:8px;padding:20px;margin-bottom:24px;" cellpadding="0" cellspacing="0">
-      <tr>
-        <td style="padding:12px 20px;">
-          <p style="margin:0 0 4px;font-size:12px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">What</p>
-          <p style="margin:0;font-size:16px;color:${heading};font-weight:600;">${esc(data.pageTitle)}</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:12px 20px;">
-          <p style="margin:0 0 4px;font-size:12px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">When</p>
-          <p style="margin:0;font-size:16px;color:${heading};font-weight:600;">${formattedStart}</p>
-          <p style="margin:4px 0 0;font-size:14px;color:#6b7280;">${data.duration} minutes (until ${formattedEnd})</p>
-        </td>
-      </tr>
-      ${data.meetingLink ? `<tr>
-        <td style="padding:12px 20px;">
-          <p style="margin:0 0 4px;font-size:12px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Where</p>
-          <a href="${esc(data.meetingLink)}" style="display:inline-block;padding:10px 24px;background:${accent};color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:500;">Join Video Call</a>
-        </td>
-      </tr>` : ''}
-    </table>
-
-    ${cancelUrl ? `<p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
-      Can't make it?
-      <a href="${cancelUrl}" style="color:${accent};text-decoration:none;">Cancel or reschedule</a>
-    </p>` : ''}
-  `, `Reminder: your ${data.pageTitle} appointment is ${formattedStart}`, data.brand);
-
-  try {
-    await sendBookingEmail({
-      from: `${fromBrandName} <${FROM_EMAIL}>`,
-      to: data.guestEmail,
-      subject: `Reminder: ${data.pageTitle} — ${formattedStart}`,
-      html,
-    });
-  } catch (err) {
-    console.error('Failed to send booking reminder email:', err);
-    throw err; // Re-throw so the cron records a failure instead of a silent skip.
-  }
 }
