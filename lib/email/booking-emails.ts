@@ -54,6 +54,9 @@ export interface BookingEmailData {
   duration: number;
   meetingLink?: string | null;
   hostEmail?: string;
+  /** Stable booking identity/timestamp make calendar attachments retry-safe. */
+  bookingId?: number;
+  createdAt?: Date;
   /** Optional brand snapshot — call `loadBookingBrand(bookingPageId)` to fetch. */
   brand?: BookingBrand | null;
 }
@@ -147,8 +150,12 @@ function toIcsDate(date: Date): string {
 
 /** Generate an .ics calendar file for a booking */
 function generateIcs(data: BookingEmailData): string {
-  const uid = crypto.randomUUID() + '@simplerdevelopment.com';
-  const now = toIcsDate(new Date());
+  const uid = data.bookingId
+    ? `booking-${data.bookingId}@simplerdevelopment.com`
+    : `booking-${crypto.createHash('sha256').update(`${data.bookingSlug}|${data.guestEmail}|${data.startTime.toISOString()}`).digest('hex').slice(0, 32)}@simplerdevelopment.com`;
+  // Use the immutable booking creation timestamp (or stable start-time
+  // fallback) so retries produce byte-identical calendar attachments.
+  const now = toIcsDate(data.createdAt ?? data.startTime);
   const dtStart = toIcsDate(data.startTime);
   const dtEnd = toIcsDate(data.endTime);
   const location = data.meetingLink || '';
