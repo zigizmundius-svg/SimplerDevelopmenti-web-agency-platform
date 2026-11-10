@@ -123,7 +123,10 @@ export async function POST(req: Request) {
       }
 
       if (page.conferenceType === 'zoom') {
-        meetingLink = await createZoomMeeting({
+        // createZoomMeeting persists the link before returning. Reuse it on a
+        // Stripe webhook retry so a crash between provider creation and the
+        // paid-state transaction cannot create a duplicate legacy Zoom room.
+        meetingLink = booking.meetingLink || await createZoomMeeting({
           clientId: page.clientId,
           bookingId: booking.id,
           title: `${page.title} — ${booking.guestName}`,
