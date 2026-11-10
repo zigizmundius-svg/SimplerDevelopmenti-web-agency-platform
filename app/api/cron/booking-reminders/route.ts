@@ -40,21 +40,6 @@ const REMINDER_LEAD_HOURS_MAX = 25; // pick up bookings starting in 23–25h
 const MS_PER_HOUR = 60 * 60 * 1000;
 const REMINDER_CLAIM_LEASE_MS = 30 * 60 * 1000;
 
-interface ReminderCandidate {
-  bookingId: number;
-  clientId: number;
-  bookingPageId: number;
-  guestName: string;
-  guestEmail: string;
-  startTime: Date;
-  endTime: Date;
-  timezone: string;
-  cancelToken: string;
-  meetingLink: string | null;
-  pageTitle: string;
-  pageSlug: string;
-  duration: number;
-}
 
 async function _GET(req: Request) {
   if (!isAuthorizedCron(req)) {
