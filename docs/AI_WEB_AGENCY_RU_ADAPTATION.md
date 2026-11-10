@@ -174,7 +174,7 @@ Before real customer deployment:
 - verify encryption at rest for all OAuth/API credentials and key rotation;
 - audit uploads, private object permissions and signed URL expiry;
 - verify webhook signatures, replay protection and idempotency;
-- audit cron authorization and job locks;
+- audit cron authorization and job locks; all cron endpoints now require `Authorization: Bearer $CRON_SECRET`; the forgeable `x-vercel-cron` marker is not accepted as authentication;
 - test custom domains, cache keys and tenant isolation;
 - run secret scanning, dependency audit and backup/restore drills;
 - review agency impersonation and immutable audit trail;
