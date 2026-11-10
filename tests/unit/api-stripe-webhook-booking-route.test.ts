@@ -44,6 +44,11 @@ const dbState: DbState = {
   updates: [],
 };
 
+const updateBookingRecordMock = vi.fn(async (input: Record<string, unknown>) => {
+  dbState.updates.push({ table: 'bookings', values: input });
+  return {};
+});
+
 interface EmailMockState {
   sendGuestConfirmation: ReturnType<typeof vi.fn>;
   sendHostNotification: ReturnType<typeof vi.fn>;
@@ -153,6 +158,10 @@ vi.mock('@/lib/db', () => {
   };
 });
 
+vi.mock('@/lib/booking/service', () => ({
+  updateBookingRecord: (input: Record<string, unknown>) => updateBookingRecordMock(input),
+}));
+
 vi.mock('@/lib/email/booking-emails', () => ({
   sendGuestConfirmation: (...args: unknown[]) => emailState.sendGuestConfirmation(...args),
   sendHostNotification: (...args: unknown[]) => emailState.sendHostNotification(...args),
@@ -215,6 +224,7 @@ beforeEach(() => {
   dbState.selectQueue = [];
   dbState.inserts = [];
   dbState.updates = [];
+  updateBookingRecordMock.mockClear();
   stripeState.constructEvent.mockReset();
   emailState.sendGuestConfirmation.mockReset();
   emailState.sendGuestConfirmation.mockResolvedValue(undefined);
