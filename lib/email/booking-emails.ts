@@ -48,7 +48,7 @@ export interface BookingEmailData {
   startTime: Date;
   endTime: Date;
   timezone: string;
-  cancelToken: string;
+  cancelToken: string | null;
   bookingSlug: string;
   duration: number;
   meetingLink?: string | null;
@@ -281,7 +281,7 @@ function brandAccent(brand?: BookingBrand | null): string {
  * Send booking confirmation email to the guest.
  */
 export async function sendGuestConfirmation(data: BookingEmailData): Promise<void> {
-  const cancelUrl = `${BASE_URL}/book/cancel?token=${data.cancelToken}`;
+  const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
   const formattedStart = formatDateTime(data.startTime, data.timezone);
   const formattedEnd = formatTime(data.endTime, data.timezone);
 
@@ -315,7 +315,7 @@ export async function sendGuestConfirmation(data: BookingEmailData): Promise<voi
 
     <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
       Need to make changes?
-      <a href="${cancelUrl}" style="color:${accent};text-decoration:none;">Cancel or reschedule</a>
+      ${cancelUrl ? `<a href="${cancelUrl}" style="color:${accent};text-decoration:none;">Cancel or reschedule</a>` : ''}
     </p>
   `, `Your ${data.pageTitle} appointment is confirmed for ${formattedStart}`, data.brand);
 
