@@ -10,8 +10,9 @@ export const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'bookings@simplerdeve
  * both failure modes so the durable queue can retry rejected deliveries. */
 export async function sendBookingEmail(
   message: Parameters<typeof resend.emails.send>[0],
+  idempotencyKey?: string,
 ): Promise<void> {
-  const result = await resend.emails.send(message);
+  const result = await resend.emails.send(message, idempotencyKey ? { idempotencyKey } : undefined);
   if (result.error) {
     throw new Error(result.error.message || 'Resend rejected the booking email');
   }
@@ -281,7 +282,7 @@ export function brandAccent(brand?: BookingBrand | null): string {
 /**
  * Send booking confirmation email to the guest.
  */
-export async function sendGuestConfirmation(data: BookingEmailData): Promise<void> {
+export async function sendGuestConfirmation(data: BookingEmailData, idempotencyKey?: string): Promise<void> {
   const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
   const formattedStart = formatDateTime(data.startTime, data.timezone);
   const formattedEnd = formatTime(data.endTime, data.timezone);
@@ -335,7 +336,7 @@ export async function sendGuestConfirmation(data: BookingEmailData): Promise<voi
           contentType: 'text/calendar; method=REQUEST',
         },
       ],
-    });
+    }, idempotencyKey);
   } catch (err) {
     console.error('Failed to send guest confirmation email:', err);
     throw err;
@@ -348,6 +349,7 @@ export async function sendGuestConfirmation(data: BookingEmailData): Promise<voi
 export async function sendHostNotification(
   hostEmail: string,
   data: BookingEmailData,
+  idempotencyKey?: string,
 ): Promise<void> {
   const formattedStart = formatDateTime(data.startTime, data.timezone);
   const formattedEnd = formatTime(data.endTime, data.timezone);
@@ -407,7 +409,7 @@ export async function sendHostNotification(
           contentType: 'text/calendar; method=REQUEST',
         },
       ],
-    });
+    }, idempotencyKey);
   } catch (err) {
     console.error('Failed to send host notification email:', err);
     throw err;
@@ -425,6 +427,7 @@ export async function sendCancellationEmail(
   timezone: string,
   bookingSlug: string,
   brand?: BookingBrand | null,
+  idempotencyKey?: string,
 ): Promise<void> {
   const formattedStart = formatDateTime(startTime, timezone);
   const rebookUrl = `${BASE_URL}/book/${bookingSlug}`;
@@ -457,7 +460,7 @@ export async function sendCancellationEmail(
       to: guestEmail,
       subject: `Cancelled: ${pageTitle} — ${formattedStart}`,
       html,
-    });
+    }, idempotencyKey);
   } catch (err) {
     console.error('Failed to send cancellation email:', err);
     throw err;
@@ -484,7 +487,7 @@ export async function sendRescheduleEmail(data: {
   meetingLink?: string | null;
   hostEmail?: string | null;
   brand?: BookingBrand | null;
-}, recipient: 'guest' | 'host' | 'both' = 'both'): Promise<void> {
+}, recipient: 'guest' | 'host' | 'both' = 'both', idempotencyKey?: string): Promise<void> {
   const cancelUrl = data.cancelToken ? `${BASE_URL}/book/cancel?token=${data.cancelToken}` : null;
   const formattedNew = formatDateTime(data.newStartTime, data.timezone);
   const formattedNewEnd = formatTime(data.newEndTime, data.timezone);
@@ -538,7 +541,7 @@ export async function sendRescheduleEmail(data: {
       to: data.guestEmail,
       subject: `Rescheduled: ${data.pageTitle} — ${formattedNew}`,
       html: guestHtml,
-    });
+    }, idempotencyKey);
   } catch (err) {
     console.error('Failed to send reschedule confirmation to guest:', err);
       throw err;
@@ -580,7 +583,7 @@ export async function sendRescheduleEmail(data: {
         to: data.hostEmail,
         subject: `Rescheduled: ${data.guestName} — ${data.pageTitle}`,
         html: hostHtml,
-      });
+      }, idempotencyKey); 
     } catch (err) {
       console.error('Failed to send reschedule notification to host:', err);
       throw err;
@@ -595,6 +598,7 @@ export async function sendHostCancellationNotification(input: {
   pageTitle: string;
   startTime: Date;
   timezone: string;
+  idempotencyKey?: string;
 }): Promise<void> {
   const formattedStart = formatDateTime(input.startTime, input.timezone);
   await sendBookingEmail({
@@ -602,5 +606,5 @@ export async function sendHostCancellationNotification(input: {
     to: input.hostEmail,
     subject: `Booking Cancelled: ${input.guestName} — ${input.pageTitle}`,
     html: `<p><strong>${esc(input.guestName)}</strong> cancelled their ${esc(input.pageTitle)} appointment on ${formattedStart}.</p>`,
-  });
+  }, input.idempotencyKey);
 }
