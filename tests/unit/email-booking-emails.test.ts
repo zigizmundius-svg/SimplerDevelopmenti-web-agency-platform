@@ -289,9 +289,12 @@ describe('sendCancellationEmail', () => {
       new Date('2026-06-15T14:00:00.000Z'),
       'UTC',
       'discovery-call',
+      undefined,
+      'booking-email/cancellation/101/guest/1',
     );
     expect(sendMock).toHaveBeenCalledTimes(1);
     const payload = sendMock.mock.calls[0][0];
+    expect(sendMock.mock.calls[0][1]).toEqual({ idempotencyKey: 'booking-email/cancellation/101/guest/1' });
     expect(payload.to).toBe('alice@example.test');
     expect(payload.from).toMatch(/^Booking Update </);
     expect(payload.subject).toMatch(/^Cancelled: Discovery Call — /);
