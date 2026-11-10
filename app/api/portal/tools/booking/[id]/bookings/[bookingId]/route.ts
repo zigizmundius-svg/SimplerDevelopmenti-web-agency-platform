@@ -52,7 +52,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (notes !== undefined && notes !== null && typeof notes !== 'string') {
     return NextResponse.json({ success: false, message: 'Notes must be a string or null' }, { status: 400 });
   }
-  if (assignedTo !== undefined && assignedTo !== null && (!Number.isInteger(assignedTo) || assignedTo <= 0)) {
+  if (assignedTo !== undefined && assignedTo !== null && (typeof assignedTo !== 'number' || !Number.isInteger(assignedTo) || assignedTo <= 0)) {
     return NextResponse.json({ success: false, message: 'Invalid assignee' }, { status: 400 });
   }
 
