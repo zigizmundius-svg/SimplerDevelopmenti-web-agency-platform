@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/lib/db', () => ({ db: {} }));
 import { drainInternalJobs, MAX_ATTEMPTS } from '@/lib/jobs';
 
 function makeDb(reclaimedRows: Array<{ status: 'pending' | 'dead_letter' }>) {
