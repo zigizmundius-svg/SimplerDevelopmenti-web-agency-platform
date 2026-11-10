@@ -82,7 +82,7 @@ export async function deliverBookingEmail(
       newEndTime,
       previousStartTime: parseDate(payload.previousStartTime, booking.previousStartTime || booking.startTime),
       timezone,
-      cancelToken: booking.cancelToken,
+      cancelToken: booking.cancelToken ?? '',
       rescheduleToken: booking.rescheduleToken,
       bookingSlug: page.slug,
       duration: page.duration,
