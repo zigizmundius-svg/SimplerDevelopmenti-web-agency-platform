@@ -151,7 +151,7 @@ async function _GET(req: Request) {
         duration: c.duration,
         meetingLink: c.meetingLink,
         brand,
-      });
+      }, `booking-reminder/${c.bookingId}`);
 
       await db
         .update(bookings)
