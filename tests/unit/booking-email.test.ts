@@ -19,6 +19,8 @@ vi.mock('@/lib/email/booking-emails', () => ({
   sendRescheduleEmail: email.reschedule,
 }));
 
+vi.mock('@/lib/db', () => ({ db: {} }));
+
 vi.mock('@/lib/booking/host-notification', () => ({
   resolveHostNotificationEmail: email.resolveHost,
 }));
