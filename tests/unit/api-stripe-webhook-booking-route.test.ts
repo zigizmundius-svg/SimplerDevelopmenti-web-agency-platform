@@ -567,6 +567,23 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     expect(linkUpdate).toBeDefined();
   });
 
+  it('reuses an existing legacy Zoom link on a Stripe webhook retry', async () => {
+    stripeState.constructEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_zoom_retry', metadata: { type: 'booking', bookingId: '100' } } },
+    });
+    dbState.selectQueue.push([{ ...DEFAULT_BOOKING, meetingLink: 'https://zoom.us/j/123' }]);
+    dbState.selectQueue.push([{ ...DEFAULT_PAGE, conferenceType: 'zoom' }]);
+    const { POST } = await import('@/app/api/stripe/webhook/booking/route');
+    const res = await POST(makeRequest('{}'));
+    expect(res.status).toBe(200);
+    expect(meetingState.createZoomMeeting).not.toHaveBeenCalled();
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      paymentStatus: 'paid',
+      meetingLink: 'https://zoom.us/j/123',
+    }));
+  });
+
   it('also syncs the Zoom meeting to Google Calendar when googleCalendarSync=true', async () => {
     stripeState.constructEvent.mockReturnValue({
       type: 'payment_intent.succeeded',
