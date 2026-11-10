@@ -179,6 +179,7 @@ async function _GET(req: Request) {
     success: true,
     data: {
       scanned: candidates.length,
+      claimed: claimedCount,
       sent,
       failed,
       windowMin: windowMin.toISOString(),
