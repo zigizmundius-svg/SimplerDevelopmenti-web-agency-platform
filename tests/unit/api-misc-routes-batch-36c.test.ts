@@ -39,6 +39,7 @@ vi.mock('drizzle-orm', () => ({
   desc: (a: unknown) => ({ op: 'desc', a }),
   asc: (a: unknown) => ({ op: 'asc', a }),
   isNull: (a: unknown) => ({ op: 'isNull', a }),
+  isNotNull: (a: unknown) => ({ op: 'isNotNull', a }),
   sql: Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => ({
       op: 'sql',
