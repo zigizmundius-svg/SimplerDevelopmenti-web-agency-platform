@@ -136,6 +136,7 @@ vi.mock('@/lib/zoom', () => ({
 }));
 
 const emitEvent = vi.fn();
+const updateBookingRecord = vi.fn().mockResolvedValue({});
 vi.mock('@/lib/automation', () => ({
   emitEvent: (...args: unknown[]) => emitEvent(...args),
 }));
@@ -213,6 +214,7 @@ vi.mock('@/lib/booking/service', () => ({
     }
     return { ok: true, endTime: new Date(startTime.getTime() + Number(page.duration ?? 30) * 60_000) };
   },
+  updateBookingRecord: (...args: unknown[]) => updateBookingRecord(...args),
   createBookingRecord: async (input: {
     page: Row;
     startTime: Date;
@@ -316,6 +318,7 @@ beforeEach(() => {
   createCalendarEvent.mockReset().mockResolvedValue({ meetingLink: null });
   createZoomMeeting.mockReset().mockResolvedValue('https://zoom.us/j/123');
   emitEvent.mockClear();
+  updateBookingRecord.mockReset().mockResolvedValue({});
   pickAssignee.mockReset().mockResolvedValue(null);
   checkSlotCapacity.mockReset().mockResolvedValue({ available: true, remaining: 10 });
   isSlotWithinAvailability.mockReset().mockResolvedValue(true);
@@ -414,7 +417,7 @@ describe('POST — scheduling window validation', () => {
 });
 
 describe('POST — 1:1 individual booking (free)', () => {
-  it('creates a free booking and emits guest_booked event when no conflicts exist', async () => {
+  it('creates a free booking without inline automation or email delivery', async () => {
     selectQueue.push([basePage()]);          // page lookup
     selectQueue.push([]);                    // conflict check (none)
     insertReturns.push([{                    // booking insert
@@ -437,13 +440,9 @@ describe('POST — 1:1 individual booking (free)', () => {
     expect(body.success).toBe(true);
     expect(body.data.id).toBe(555);
     expect(body.data.paymentStatus).toBe('free');
-    expect(emitEvent).toHaveBeenCalledWith(
-      'booking.guest_booked',
-      7,
-      0,
-      expect.objectContaining({ bookingId: 555 }),
-    );
-    expect(sendGuestConfirmation).toHaveBeenCalled();
+    expect(emitEvent).not.toHaveBeenCalled();
+    expect(sendGuestConfirmation).not.toHaveBeenCalled();
+    expect(sendHostNotification).not.toHaveBeenCalled();
   });
 
   it('returns 409 when a conflicting booking is found', async () => {
