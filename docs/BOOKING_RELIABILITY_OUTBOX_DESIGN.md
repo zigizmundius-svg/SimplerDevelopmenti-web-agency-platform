@@ -181,7 +181,7 @@ The existing PostgreSQL `internal_jobs` queue now handles:
 
 Public paid bookings deliberately do not create calendar events or send confirmation emails before Stripe confirms payment. The payment transition enqueues those effects. Existing fast-path calendar calls remain in place where they provide immediate feedback; the queued reconciliation is the durable recovery path. New Zoom setup remains out of MVP. Existing Zoom create/update/delete paths are retained as legacy best-effort behavior and are not yet durable.
 
-This is at-least-once delivery, not exactly-once. If Resend accepts a message and the worker dies before marking the job complete, a retry can send a duplicate because provider-side idempotency is not currently wired. Calendar creation is protected by the stable event ID; calendar updates are idempotent patches. Agency operators can inspect dead-letter jobs and retry them from `/admin/internal-jobs`; this is an operational recovery control, not an exactly-once guarantee.
+This is at-least-once job execution with provider-side duplicate suppression for Resend booking emails. Each transactional email job carries a stable idempotency key derived from event kind, booking, recipient, booking revision, and event time; the reminder cron uses a stable booking-specific key. The Resend SDK forwards this as `Idempotency-Key`. Confirmation calendar attachments also use a stable UID and DTSTAMP so a retry keeps the request body identical. Resend retains keys for 24 hours only: retries inside that window with the same payload return the original result, while retries after expiry may send again. Before manually retrying an old dead-letter email job after 24 hours, operators must reconcile delivery in Resend. Calendar creation is protected by the stable event ID; calendar updates are idempotent patches. This materially reduces duplicates but is not an unlimited exactly-once guarantee.
 
 
 
@@ -198,7 +198,7 @@ The in-process dispatcher and retry cron must compete for the same atomic `pendi
 
 Google Calendar booking event creation now uses a deterministic event ID derived from the booking's database ID (base32hex, valid for Google Calendar event IDs). If Google creates the event but the application fails before saving `googleEventId`, a retry receives a conflict and reads the already-created event instead of inserting a duplicate. Google Meet conference creation also uses a stable request ID. Deleting an event that is already absent is treated as success.
 
-Calendar create/update/delete operations are now reconciled by the `booking.calendar_sync` internal job. Booking emails are dispatched by separate `booking.email` jobs per recipient. Both job families are enqueued in the same transaction as the booking state change. The booking calendar and email worker paths pass the current unit, typecheck, build, and CI checks. Database-backed integration coverage remains a separate verification item.
+Calendar create/update/delete operations are now reconciled by the `booking.calendar_sync` internal job. Booking emails are dispatched by separate `booking.email` jobs per recipient. Both job families are enqueued in the same transaction as the booking state change. The booking calendar and email worker paths have unit coverage; the current CI run is the source of truth for whether the latest changes pass. Database-backed integration coverage remains a separate verification item.
 
 
 ## Worker regression tests added
@@ -282,4 +282,4 @@ operator-approved abandonment path is recorded.
 
 The hourly `/api/cron/booking-reminders` route now uses `bookings.reminder_claimed_at` as a 30-minute lease. Candidate IDs are read first; each booking must then win a conditional PostgreSQL UPDATE before guest details are loaded or email is sent. The completion update stamps `reminder_sent_at` and clears the lease only while the worker still owns the exact claim timestamp. Delivery failures release the worker's own claim immediately; crashed workers are recoverable after lease expiry. This prevents concurrent cron invocations from sending the same reminder simultaneously.
 
-External email delivery remains at-least-once: if the provider accepts an email and the process dies before the database records success, a later retry may send it again. The lease closes the concurrent-worker race but cannot make an external provider call and a PostgreSQL write one atomic transaction.
+Resend idempotency keys now suppress duplicate reminder sends when a retry occurs within the provider's 24-hour retention window and the request payload is unchanged. The lease still closes the concurrent-worker race, but the provider call and PostgreSQL success marker are not one atomic transaction; retries after key expiry may send again.
