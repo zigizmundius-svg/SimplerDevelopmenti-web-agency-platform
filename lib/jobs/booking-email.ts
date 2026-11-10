@@ -57,6 +57,9 @@ export async function deliverBookingEmail(
 
   const { booking, page } = row;
   const emailKind = kind as EmailKind;
+  const idempotencyKey = typeof payload.idempotencyKey === 'string' && payload.idempotencyKey.length > 0
+    ? payload.idempotencyKey
+    : undefined;
 
   // Skip stale notifications when a later state transition superseded them.
   if (emailKind === 'confirmation' && booking.status === 'cancelled') return;
@@ -89,7 +92,7 @@ export async function deliverBookingEmail(
       meetingLink: booking.meetingLink,
       hostEmail: recipient === 'host' ? hostEmail : null,
       brand,
-    }, recipient);
+    }, recipient, idempotencyKey);
     return;
   }
 
@@ -108,7 +111,7 @@ export async function deliverBookingEmail(
         meetingLink: booking.meetingLink,
         brand,
       };
-      await sendGuestConfirmation(data);
+      await sendGuestConfirmation(data, idempotencyKey);
     } else {
       await sendCancellationEmail(
         booking.guestEmail,
@@ -118,6 +121,7 @@ export async function deliverBookingEmail(
         timezone,
         page.slug,
         brand,
+        idempotencyKey,
       );
     }
     return;
@@ -136,7 +140,7 @@ export async function deliverBookingEmail(
       duration: page.duration,
       meetingLink: booking.meetingLink,
       brand,
-    });
+    }, idempotencyKey);
   } else {
     await sendHostCancellationNotification({
       hostEmail: hostEmail!,
@@ -144,6 +148,7 @@ export async function deliverBookingEmail(
       pageTitle: page.title,
       startTime: booking.startTime,
       timezone,
+      idempotencyKey,
     });
   }
 }
