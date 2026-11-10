@@ -59,13 +59,14 @@ export async function POST(
       payment_intent: booking.stripePaymentIntentId,
     };
 
-    if (hasAmount) refundParams.amount = amount as number;
+    // Omit amount for a full refund; Stripe interprets that as refunding the full charge.
+    const isFullRefund = !hasAmount || amount === booking.total;
+    if (hasAmount && !isFullRefund) refundParams.amount = amount as number;
 
     const refund = await stripe.refunds.create(refundParams);
 
     // The schema has no partial-refund state. Keep partial refunds as paid;
     // only a full refund cancels the booking and changes paymentStatus.
-    const isFullRefund = !hasAmount || amount === booking.total;
 
     const updated = await updateBookingRecord({
       bookingId: booking.id,
