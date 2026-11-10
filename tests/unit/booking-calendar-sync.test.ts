@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@/lib/db', () => ({ db: {} }));
+
 const calendar = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
