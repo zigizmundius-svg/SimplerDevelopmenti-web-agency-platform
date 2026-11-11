@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { resolveClientSite } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { apiKeys } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { generateApiKey, hashApiKey, previewApiKey } from '@/lib/api-keys';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
   const { siteId } = await params;
-  const userId = parseInt(session.user.id, 10);
-  const site = await resolveClientSite(userId, parseInt(siteId, 10));
-  if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
 
   const keys = await db
     .select({
@@ -27,7 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
       createdAt: apiKeys.createdAt,
     })
     .from(apiKeys)
-    .where(eq(apiKeys.websiteId, site.id))
+    .where(eq(apiKeys.websiteId, authorized.site.id))
     .orderBy(apiKeys.createdAt);
 
   // keyPreview is already the display-safe masked form (stored at creation).
@@ -35,13 +34,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ siteId: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
   const { siteId } = await params;
-  const userId = parseInt(session.user.id, 10);
-  const site = await resolveClientSite(userId, parseInt(siteId, 10));
-  if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
 
   const body = await req.json();
   const name = body.name?.trim() || 'Default';
@@ -49,8 +48,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
   const key = generateApiKey();
 
   const [record] = await db.insert(apiKeys).values({
-    clientId: site.clientId,
-    websiteId: site.id,
+    clientId: authorized.site.clientId,
+    websiteId: authorized.site.id,
     keyHash: hashApiKey(key),
     keyPreview: previewApiKey(key),
     name,
