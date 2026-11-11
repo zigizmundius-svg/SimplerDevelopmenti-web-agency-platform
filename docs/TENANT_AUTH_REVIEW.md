@@ -14,6 +14,19 @@
 - `scripts/run-tenancy.sh` deliberately ignores ambient `DATABASE_URL`, pins tests to `DATABASE_URL_TEST` or a local test DB, and avoids accidental execution against a remote database.
 - Public booking tenancy tests verify slug resolution and tenant stamping for bookings/attendees.
 
+## 1A. Follow-up verification on the adaptation branch
+
+The follow-up source check confirms that the rollout switches are not enabled by default:
+
+- `.env.example` leaves both `AUTH_ROLE_ENFORCE=` and `AUTH_SCOPE_ENFORCE=` empty.
+- `lib/portal-auth.ts` therefore keeps opted-in portal role checks in observe/log-only mode unless `AUTH_ROLE_ENFORCE=1` is explicitly configured.
+- The bearer-token OAuth scope check also logs insufficient scopes but allows the request unless `AUTH_SCOPE_ENFORCE=1` is explicitly configured. Existing legacy MCP keys with wildcard scopes are unaffected by this switch.
+- Site-scoped portal authorization documents the same log-only rollout default for newly guarded routes.
+
+**Release gate:** before any customer-facing deployment, inventory the routes using observe-mode role checks and bearer-token scope enforcement, add negative tests for each sensitive action, then explicitly configure both enforcement switches to `1` in every production environment. Do not flip either switch blindly before the route inventory and compatibility tests are complete. A blank environment value is not an acceptable production decision.
+
+This is a static source/configuration finding; the active deployment environment was not inspected, so no claim is made about the values currently configured in any hosted environment.
+
 ## 2. Findings requiring adaptation decisions
 
 ### F-01 — role enforcement has a log-only rollout mode
