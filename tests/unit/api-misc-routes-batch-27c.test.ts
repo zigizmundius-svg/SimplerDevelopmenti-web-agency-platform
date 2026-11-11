@@ -332,7 +332,7 @@ describe('/api/cron/brain-daily-notes', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([]); // no templates
     const res = await brainDailyNotesRoute.GET(
       makeReq('http://x/api/cron/brain-daily-notes', {
@@ -584,7 +584,7 @@ describe('/api/cron/resend-usage-sync', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([]); // grouped query returns empty
     const res = await resendUsageSyncRoute.GET(
       makeReq('http://x/api/cron/resend-usage-sync', {
