@@ -74,9 +74,12 @@ A focused review of the website API surface found routes that checked only for a
 - provision/re-provision a website — admin role;
 - read website environments — live membership required, viewer+ allowed;
 - list/create backups, copy/restore environment variables, and sync variables to Vercel — admin role;
-- read/create/update/delete environment variables (which may contain secrets) — admin role.
+- read/create/update/delete environment variables (which may contain secrets) — admin role;
+- view deployment history — live membership required, viewer+ allowed;
+- view deployment logs and raw HTTP request logs — admin role;
+- publish one or all navigation drafts — admin role.
 
-These environment endpoints now resolve the environment by both its ID and the already-authorized website ID. They no longer rely on the active-client cookie helper, so a valid site deep link cannot accidentally resolve against a different active tenant.
+Environment endpoints now resolve the environment by both its ID and the already-authorized website ID. They no longer rely on the active-client cookie helper, so a valid site deep link cannot accidentally resolve against a different active tenant. The deployment, logs and navigation endpoints also use the site-scoped resolver rather than trusting the active-client cookie.
 
 The shared auth unit suite now includes regressions proving that a member is denied an admin site action and that a user with removed membership is denied site access.
 
