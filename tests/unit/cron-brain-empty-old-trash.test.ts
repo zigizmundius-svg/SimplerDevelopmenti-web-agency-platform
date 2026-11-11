@@ -61,33 +61,15 @@ describe('GET /api/cron/brain-empty-old-trash — auth + envelope', () => {
     expect(json.success).toBe(false);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
-    process.env.CRON_SECRET = 'shh';
+  it('rejects forged the Vercel cron header without bearer token', async () => {
+    delete process.env.CRON_SECRET;
     const { GET } = await import('@/app/api/cron/brain-empty-old-trash/route');
     const res = await GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      data: {
-        clientsScanned: number;
-        totalPurged: number;
-        totalAttachmentsDeleted: number;
-        durationMs: number;
-        retentionDays: number;
-      };
-    };
-    expect(json.success).toBe(true);
-    expect(json.data).toMatchObject({
-      clientsScanned: 0,
-      totalPurged: 0,
-      totalAttachmentsDeleted: 0,
-      retentionDays: 90,
-    });
-    expect(typeof json.data.durationMs).toBe('number');
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -113,7 +95,7 @@ describe('GET /api/cron/brain-empty-old-trash — auth + envelope', () => {
     const { GET } = await import('@/app/api/cron/brain-empty-old-trash/route');
     const res = await GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -155,7 +137,7 @@ describe('GET /api/cron/brain-empty-old-trash — auth + envelope', () => {
     const { GET } = await import('@/app/api/cron/brain-empty-old-trash/route');
     const res = await GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
