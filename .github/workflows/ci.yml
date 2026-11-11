@@ -483,14 +483,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # NEXTAUTH_SECRET + ENCRYPTION_KEY are generated ephemerally (never
+      # Auth, encryption, and cron secrets are generated ephemerally (never
       # literals in the repo) ONCE here, then shared to every e2e leg via a
-      # short-lived artifact — the build inlines env, so build and serve must
-      # agree. ENCRYPTION_KEY is @security's AAF-001 capture/decrypt path.
+      # short-lived artifact. ENCRYPTION_KEY is @security's AAF-001 path;
+      # CRON_SECRET exercises the same Bearer-only auth required in production.
       - name: Generate ephemeral secrets (shared with e2e legs)
         run: |
           echo "NEXTAUTH_SECRET=$(openssl rand -hex 32)" > e2e-secrets.env
           echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> e2e-secrets.env
+          echo "CRON_SECRET=$(openssl rand -hex 32)" >> e2e-secrets.env
           cat e2e-secrets.env >> "$GITHUB_ENV"
 
       - name: Enable required Postgres extensions
