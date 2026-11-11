@@ -229,7 +229,14 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
         headers: { authorization: 'Bearer shh' },
       }),
     );
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      success: boolean;
+      data: { skipped: string };
+    };
+    expect(json.success).toBe(true);
+    expect(json.data.skipped).toBe('microsoft_oauth_not_configured');
+    expect(dbMock.select).not.toHaveBeenCalled();
   });
 
   it('uses a fallback redirect URI when NEXTAUTH_URL is unset', async () => {
