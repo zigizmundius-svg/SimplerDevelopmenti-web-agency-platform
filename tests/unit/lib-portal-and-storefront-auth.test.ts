@@ -115,9 +115,11 @@ vi.mock('@/lib/auth', () => ({ auth: () => authMock() }));
 
 const getPortalClientMock = vi.fn();
 const getPortalRoleMock = vi.fn();
+const resolvePortalSiteMock = vi.fn();
 vi.mock('@/lib/portal-client', () => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
   getPortalRole: (...args: unknown[]) => getPortalRoleMock(...args),
+  resolvePortalSite: (...args: unknown[]) => resolvePortalSiteMock(...args),
 }));
 
 const resolvePortalFromCurrentRequestMock = vi.fn();
@@ -165,6 +167,7 @@ vi.mock('crypto', () => ({
 // ===========================================================================
 import {
   authorizePortal,
+  authorizePortalSite,
   isAuthError,
   hasServiceAccess,
 } from '@/lib/portal-auth';
@@ -191,6 +194,7 @@ describe('lib/portal-auth.ts', () => {
     authMock.mockReset();
     getPortalClientMock.mockReset();
     getPortalRoleMock.mockReset();
+    resolvePortalSiteMock.mockReset();
     resolvePortalFromCurrentRequestMock.mockReset();
     resolvePortalFromCurrentRequestMock.mockResolvedValue(null);
   });
@@ -327,6 +331,43 @@ describe('lib/portal-auth.ts', () => {
     const result: any = await authorizePortal({ action: 'owner' });
     expect(result.response.status).toBe(403);
     expect(result.response._body.message).toMatch(/owner only/);
+  });
+
+  // -------- authorizePortalSite: strict site role enforcement --------
+  it('denies a member site-admin action when observeRole is explicitly disabled', async () => {
+    authMock.mockResolvedValue({ user: { id: '11' } });
+    resolvePortalSiteMock.mockResolvedValue({
+      site: { id: 77, clientId: 99 },
+      client: { id: 99, userId: 1 },
+    });
+    getPortalRoleMock.mockResolvedValue('member');
+
+    const result: any = await authorizePortalSite({
+      siteId: 77,
+      action: 'admin',
+      observeRole: false,
+    });
+
+    expect(result.response.status).toBe(403);
+    expect(result.response._body.message).toMatch(/member/);
+    expect(getPortalRoleMock).toHaveBeenCalledWith(11, 99);
+  });
+
+  it('denies site access after live membership is removed', async () => {
+    authMock.mockResolvedValue({ user: { id: '11' } });
+    resolvePortalSiteMock.mockResolvedValue({
+      site: { id: 77, clientId: 99 },
+      client: { id: 99, userId: 1 },
+    });
+    getPortalRoleMock.mockResolvedValue(null);
+
+    const result: any = await authorizePortalSite({
+      siteId: 77,
+      action: 'read',
+      observeRole: false,
+    });
+
+    expect(result.response.status).toBe(403);
   });
 
   // -------- authorizePortal: requireService gate --------
