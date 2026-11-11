@@ -26,12 +26,14 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 const getPortalClientMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
 }));
 
 const authorizePortalMock = vi.fn();
-vi.mock('@/lib/portal-auth', () => ({
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
   authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
   isAuthError: (r: unknown) =>
     typeof r === 'object' && r !== null && 'response' in (r as Record<string, unknown>),
