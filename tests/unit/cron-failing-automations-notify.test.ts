@@ -46,22 +46,15 @@ describe('GET /api/cron/failing-automations-notify — auth + envelope', () => {
     expect(json.success).toBe(false);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
-    process.env.CRON_SECRET = 'shh';
+  it('rejects forged the Vercel cron header without bearer token', async () => {
+    delete process.env.CRON_SECRET;
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
         headers: { 'x-vercel-cron': '1' },
       })
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      data: { scanned: number; matched: number; notified: number; skippedDup: number; durationMs: number };
-    };
-    expect(json.success).toBe(true);
-    expect(json.data).toMatchObject({ scanned: 0, matched: 0, notified: 0, skippedDup: 0 });
-    expect(typeof json.data.durationMs).toBe('number');
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -105,7 +98,7 @@ describe('GET /api/cron/failing-automations-notify — auth + envelope', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
     expect(res.status).toBe(200);
