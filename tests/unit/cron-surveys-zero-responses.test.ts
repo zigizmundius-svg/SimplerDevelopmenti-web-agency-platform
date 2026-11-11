@@ -74,7 +74,7 @@ describe('GET /api/cron/surveys-zero-responses', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     queue.push([]); // candidate query: no surveys at risk
     const { GET } = await import('@/app/api/cron/surveys-zero-responses/route');
     const res = await GET(
