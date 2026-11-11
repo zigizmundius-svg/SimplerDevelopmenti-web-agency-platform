@@ -86,7 +86,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     queue.push([]); // candidate query: no stuck holds
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
     const res = await GET(
