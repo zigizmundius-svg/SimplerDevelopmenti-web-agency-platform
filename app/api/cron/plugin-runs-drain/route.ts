@@ -6,7 +6,7 @@
 //
 // Volume cap: at most 5 candidates per tick, processed in batches of 2 by
 // drainQueuedRuns. Anthropic calls can take 30-60s — the parallelism cap
-// keeps the cron function well under Vercel's 60s ceiling on Pro.
+// Cron authentication is Bearer-only via lib/cron-auth.ts.
 // Idempotent under concurrent ticks: drainQueuedRuns CAS-claims via
 // executeRun, so two simultaneous cron invocations don't double-fire.
 
