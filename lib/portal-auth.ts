@@ -238,6 +238,7 @@ export function isAuthError<T extends object>(result: T | AuthorizeError): resul
 
 interface AuthorizeSiteResult {
   site: typeof clientWebsites.$inferSelect;
+  client: typeof clients.$inferSelect;
   userId: number;
   role: PortalRole;
 }
@@ -298,7 +299,7 @@ export async function authorizePortalSite(opts: {
     };
   }
 
-  return { site, userId, role };
+  return { site, client, userId, role };
 }
 
 /**
