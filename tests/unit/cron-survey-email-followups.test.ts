@@ -150,8 +150,8 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
     expect(json.success).toBe(false);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
-    process.env.CRON_SECRET = 'shh';
+  it('rejects forged the Vercel cron header without bearer token', async () => {
+    delete process.env.CRON_SECRET;
     selectQueue.push([]); // sequences: empty queue
     const { GET } = await import('@/app/api/cron/process-survey-email-followups/route');
     const res = await GET(
@@ -159,27 +159,7 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      data: {
-        scanned: number;
-        sent: number;
-        errors: number;
-        sequencesEvaluated: number;
-        durationMs: number;
-        skipped: { noEmail: number; noConsent: number; condition: number };
-      };
-    };
-    expect(json.success).toBe(true);
-    expect(json.data).toMatchObject({
-      scanned: 0,
-      sent: 0,
-      errors: 0,
-      sequencesEvaluated: 0,
-      skipped: { noEmail: 0, noConsent: 0, condition: 0 },
-    });
-    expect(typeof json.data.durationMs).toBe('number');
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -229,7 +209,7 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
     const { GET } = await import('@/app/api/cron/process-survey-email-followups/route');
     const res = await GET(
       new Request('http://x/api/cron/process-survey-email-followups', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -304,7 +284,7 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
     const { GET } = await import('@/app/api/cron/process-survey-email-followups/route');
     const res = await GET(
       new Request('http://x/api/cron/process-survey-email-followups', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -362,7 +342,7 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
     const { GET } = await import('@/app/api/cron/process-survey-email-followups/route');
     const res = await GET(
       new Request('http://x/api/cron/process-survey-email-followups', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -414,7 +394,7 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
     const { GET } = await import('@/app/api/cron/process-survey-email-followups/route');
     const res = await GET(
       new Request('http://x/api/cron/process-survey-email-followups', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
