@@ -27,7 +27,8 @@ vi.mock('@/lib/auth', () => ({
 
 const getPortalClientMock = vi.fn();
 const resolveClientSiteMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
 }));
@@ -38,7 +39,8 @@ vi.mock('@/lib/github', () => ({
 }));
 
 const hasServiceAccessMock = vi.fn();
-vi.mock('@/lib/portal-auth', () => ({
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
   hasServiceAccess: (...args: unknown[]) => hasServiceAccessMock(...args),
 }));
 
