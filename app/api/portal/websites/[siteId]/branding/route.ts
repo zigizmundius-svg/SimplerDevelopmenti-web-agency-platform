@@ -1,27 +1,9 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { clientWebsites, siteBranding, brandingProfiles } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { revalidateSiteChrome } from '@/lib/sites/site-cache';
-
-async function verifySiteAccess(siteId: string) {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return null;
-
-  const [site] = await db
-    .select({ id: clientWebsites.id })
-    .from(clientWebsites)
-    .where(and(eq(clientWebsites.id, parseInt(siteId)), eq(clientWebsites.clientId, client.id)))
-    .limit(1);
-
-  return site || null;
-}
 
 const DEFAULTS = {
   logoUrl: '',
@@ -48,16 +30,18 @@ export async function GET(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
-  const site = await verifySiteAccess(siteId);
-  if (!site) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'read',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
 
-  const [branding] = await db
-    .select()
-    .from(siteBranding)
-    .where(eq(siteBranding.websiteId, site.id))
+  const [branding] = await db.select().from(siteBranding)
+    .where(eq(siteBranding.websiteId, authorized.site.id))
     .limit(1);
 
-  return NextResponse.json({ success: true, data: branding || { websiteId: site.id, ...DEFAULTS } });
+  return NextResponse.json({ success: true, data: branding || { websiteId: authorized.site.id, ...DEFAULTS } });
 }
 
 export async function PUT(
@@ -65,11 +49,15 @@ export async function PUT(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
-  const site = await verifySiteAccess(siteId);
-  if (!site) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
+  const site = authorized.site;
 
   const body = await req.json();
-
   const values = {
     websiteId: site.id,
     logoUrl: body.logoUrl ?? DEFAULTS.logoUrl,
@@ -100,29 +88,20 @@ export async function PUT(
     updatedAt: new Date(),
   };
 
-  const [existing] = await db
-    .select({ id: siteBranding.id })
-    .from(siteBranding)
+  const [existing] = await db.select({ id: siteBranding.id }).from(siteBranding)
     .where(eq(siteBranding.websiteId, site.id))
     .limit(1);
 
   let result;
   if (existing) {
-    [result] = await db
-      .update(siteBranding)
-      .set(values)
+    [result] = await db.update(siteBranding).set(values)
       .where(eq(siteBranding.id, existing.id))
       .returning();
   } else {
-    [result] = await db
-      .insert(siteBranding)
-      .values(values)
-      .returning();
+    [result] = await db.insert(siteBranding).values(values).returning();
   }
 
-  // Also sync to branding profile if the site has one assigned
-  const [siteRow] = await db
-    .select({ brandingProfileId: clientWebsites.brandingProfileId })
+  const [siteRow] = await db.select({ brandingProfileId: clientWebsites.brandingProfileId })
     .from(clientWebsites)
     .where(eq(clientWebsites.id, site.id))
     .limit(1);
@@ -150,10 +129,6 @@ export async function PUT(
     }).where(eq(brandingProfiles.id, siteRow.brandingProfileId));
   }
 
-  // Branding drives colours, fonts and logo on every page of this tenant's site,
-  // all cached as chrome — purge so the change is visible immediately rather
-  // than after the cache TTL.
   revalidateSiteChrome(site.id);
-
   return NextResponse.json({ success: true, data: result });
 }
