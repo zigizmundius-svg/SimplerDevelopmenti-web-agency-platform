@@ -68,7 +68,8 @@ vi.mock('@/lib/auth', () => ({
 
 const getPortalClientMock = vi.fn();
 const resolvePortalSiteMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
   resolvePortalSite: (...args: unknown[]) => resolvePortalSiteMock(...args),
 }));
