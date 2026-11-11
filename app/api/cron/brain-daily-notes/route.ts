@@ -64,7 +64,7 @@ async function _GET(req: Request) {
   for (const tpl of templates) {
     const sourceUrl = `daily://${tpl.id}/${dateKey}`;
     try {
-      // Per-tenant entitlement gate — this cron is unauthenticated (Vercel
+      // Cron authentication is Bearer-only via lib/cron-auth.ts.
       // cron header / shared secret) so we cannot use the request-scoped
       // `requireBrainEntitlement`. Defense-in-depth: if a tenant churned but
       // still has `enabled=true` daily templates lying around, do not write
