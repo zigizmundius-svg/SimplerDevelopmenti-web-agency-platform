@@ -302,24 +302,18 @@ test.describe('Agent Audit & Forensics — purge-agent-captures cron @security @
     expect(res.status()).toBe(401);
   });
 
-  test('accepts the Vercel cron header and returns { purged } on GET @security', async ({ request }) => {
+  test('rejects a forged Vercel cron header on GET @security', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/cron/purge-agent-captures`, {
       headers: { 'x-vercel-cron': '1' },
     });
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(typeof body.purged).toBe('number');
+    expect(res.status()).toBe(401);
   });
 
-  test('also accepts POST (manual trigger) with the Vercel cron header @security', async ({ request }) => {
+  test('rejects a forged Vercel cron header on POST @security', async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/cron/purge-agent-captures`, {
       headers: { 'x-vercel-cron': '1' },
     });
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(typeof body.purged).toBe('number');
+    expect(res.status()).toBe(401);
   });
 
   test('accepts a valid CRON_SECRET bearer token @security', async ({ request }) => {
@@ -333,6 +327,8 @@ test.describe('Agent Audit & Forensics — purge-agent-captures cron @security @
   });
 
   test('purges a capture older than the 90-day retention window and leaves a recent one intact @security', async ({ clientApi, request }) => {
+    const secret = process.env.CRON_SECRET;
+    test.skip(!secret, 'CRON_SECRET not set — skipping authenticated purge assertion');
     const clientId = await getActiveClientId(clientApi);
     const oldId = parseInt(
       psql(
@@ -349,7 +345,7 @@ test.describe('Agent Audit & Forensics — purge-agent-captures cron @security @
 
     try {
       const res = await request.get(`${BASE_URL}/api/cron/purge-agent-captures`, {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { Authorization: `Bearer ${secret}` },
       });
       expect(res.status()).toBe(200);
       const body = await res.json();
