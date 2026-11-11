@@ -114,10 +114,16 @@ export function readImpersonationCookie(rawToken: string | undefined | null): Pa
 export function getImpersonatedClientIdFromToken(
   rawToken: string | undefined | null,
   userRole: string | null | undefined,
+  expectedStaffUserId: number,
 ): number | null {
-  if (!isStaffRole(userRole)) return null;
+  if (!isStaffRole(userRole) || !Number.isSafeInteger(expectedStaffUserId) || expectedStaffUserId <= 0) {
+    return null;
+  }
   const payload = verify(rawToken);
-  return payload?.clientId ?? null;
+  // The signed cookie is a credential for one staff identity, not merely for
+  // anyone who happens to have a staff role in the same browser.
+  if (!payload || payload.staffUserId !== expectedStaffUserId) return null;
+  return payload.clientId;
 }
 
 /** Cookie attributes for setting/clearing in route handlers. */
