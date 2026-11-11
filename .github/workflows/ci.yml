@@ -504,9 +504,11 @@ jobs:
         run: bunx drizzle-kit push --force
 
       - name: Build app
-        # Turbopack's Google-font resolver currently fails on this repo's
-        # multi-weight next/font declarations; use the supported webpack
-        # production builder until that upstream resolver issue is fixed.
+        # This app's production bundle exceeds Node's default ~4GB V8 heap
+        # during webpack compilation. The ubuntu-latest runner has enough
+        # memory for an 8GB heap; keep the build worker count conservative.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
         run: bun run build -- --webpack
 
       # .next/cache is the build cache (can be hundreds of MB) — the serving
