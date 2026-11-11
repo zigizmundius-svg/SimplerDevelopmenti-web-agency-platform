@@ -114,8 +114,16 @@ const authMock = vi.fn();
 vi.mock('@/lib/auth', () => ({ auth: () => authMock() }));
 
 const getPortalClientMock = vi.fn();
+const getPortalRoleMock = vi.fn();
 vi.mock('@/lib/portal-client', () => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
+  getPortalRole: (...args: unknown[]) => getPortalRoleMock(...args),
+}));
+
+const resolvePortalFromCurrentRequestMock = vi.fn();
+vi.mock('@/lib/mcp-auth', () => ({
+  resolvePortalFromCurrentRequest: () => resolvePortalFromCurrentRequestMock(),
+  hasScope: () => true,
 }));
 
 vi.mock('next/server', () => ({
@@ -182,6 +190,9 @@ describe('lib/portal-auth.ts', () => {
     dbCalls.length = 0;
     authMock.mockReset();
     getPortalClientMock.mockReset();
+    getPortalRoleMock.mockReset();
+    resolvePortalFromCurrentRequestMock.mockReset();
+    resolvePortalFromCurrentRequestMock.mockResolvedValue(null);
   });
 
   // -------- isAuthError --------
@@ -215,6 +226,42 @@ describe('lib/portal-auth.ts', () => {
     expect(result.response.status).toBe(404);
     expect(result.response._body.message).toBe('Client not found');
     expect(getPortalClientMock).toHaveBeenCalledWith(42);
+  });
+
+  // -------- authorizePortal: bearer membership revocation --------
+  it('denies bearer REST access when the user no longer belongs to the credential client', async () => {
+    resolvePortalFromCurrentRequestMock.mockResolvedValue({
+      userId: 11,
+      client: { id: 99, userId: 1 },
+      scopes: ['*'],
+      keyId: 5,
+      credentialKind: 'portal_api_key',
+      requireCmsApproval: true,
+    });
+    getPortalRoleMock.mockResolvedValue(null);
+
+    const result: any = await authorizePortal({ action: 'read' });
+
+    expect(result.response.status).toBe(403);
+    expect(result.response._body.message).toMatch(/access to this client has been removed/i);
+    expect(getPortalRoleMock).toHaveBeenCalledWith(11, 99);
+  });
+
+  it('allows bearer REST reads when live membership still exists', async () => {
+    resolvePortalFromCurrentRequestMock.mockResolvedValue({
+      userId: 11,
+      client: { id: 99, userId: 1 },
+      scopes: ['*'],
+      keyId: 5,
+      credentialKind: 'portal_api_key',
+      requireCmsApproval: true,
+    });
+    getPortalRoleMock.mockResolvedValue('viewer');
+
+    const result: any = await authorizePortal({ action: 'read' });
+
+    expect(isAuthError(result)).toBe(false);
+    expect(result.role).toBe('viewer');
   });
 
   // -------- authorizePortal: role resolution --------
