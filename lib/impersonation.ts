@@ -105,11 +105,12 @@ export function readImpersonationCookie(rawToken: string | undefined | null): Pa
 }
 
 /**
- * Returns the target clientId if (a) the cookie verifies and (b) the caller
- * is a staff user. Returns null otherwise.
+ * Returns the target clientId only when the cookie verifies, the caller has a
+ * staff role, and the signed staffUserId matches the authenticated session user.
+ * Returns null otherwise.
  *
- * This is the single security boundary for the read path. Non-staff users
- * never see a non-null result regardless of cookie state.
+ * This is the single security boundary for the read path. Neither non-staff
+ * users nor a different staff identity can reuse a copied impersonation cookie.
  */
 export function getImpersonatedClientIdFromToken(
   rawToken: string | undefined | null,
