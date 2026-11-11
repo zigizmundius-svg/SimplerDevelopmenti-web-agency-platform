@@ -297,13 +297,13 @@ describe('GET /api/cron/renew-drive-watches', () => {
   });
 
   it('falls back to NEXT_PUBLIC_SITE_URL when GOOGLE_DRIVE_WEBHOOK_URL is unset', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     delete process.env.GOOGLE_DRIVE_WEBHOOK_URL;
     process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example.com';
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as { webhookAddress: string };
