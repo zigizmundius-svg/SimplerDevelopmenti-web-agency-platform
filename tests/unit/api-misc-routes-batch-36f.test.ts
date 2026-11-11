@@ -1000,17 +1000,14 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
     expect((await res.json()).success).toBe(false);
   });
 
-  it('accepts the x-vercel-cron header without a bearer token', async () => {
+  it('rejects forged the x-vercel-cron header without a bearer token', async () => {
+    delete process.env.CRON_SECRET;
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.retentionDays).toBe(90);
-    expect(body.data.clientsScanned).toBe(0);
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -1038,10 +1035,11 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   it('fans out across every tenant and accumulates per-client counts', async () => {
+    process.env.CRON_SECRET = 'shh';
     state.clients.push({ id: 1 });
     state.clients.push({ id: 2 });
     state.clients.push({ id: 3 });
@@ -1053,7 +1051,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
 
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1071,6 +1069,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
   });
 
   it("isolates a single tenant's failure so the sweep continues", async () => {
+    process.env.CRON_SECRET = 'shh';
     state.clients.push({ id: 100 });
     state.clients.push({ id: 200 });
     state.clients.push({ id: 300 });
@@ -1084,7 +1083,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
 
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
