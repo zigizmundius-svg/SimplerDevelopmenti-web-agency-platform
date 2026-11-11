@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { clientWebsites } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { addDomain } from '@/lib/vercel';
 import { normalizeCustomDomain } from '@/lib/normalize-domain';
 
@@ -11,21 +10,15 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ siteId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return NextResponse.json({ success: false, message: 'Client not found' }, { status: 404 });
-
   const { siteId } = await params;
-  const [site] = await db
-    .select()
-    .from(clientWebsites)
-    .where(and(eq(clientWebsites.id, parseInt(siteId)), eq(clientWebsites.clientId, client.id)))
-    .limit(1);
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
 
-  if (!site) return NextResponse.json({ success: false, message: 'Website not found' }, { status: 404 });
+  const site = authorized.site;
   if (!site.vercelProjectId) {
     return NextResponse.json({ success: false, message: 'Website must be provisioned before adding a custom domain.' }, { status: 400 });
   }
