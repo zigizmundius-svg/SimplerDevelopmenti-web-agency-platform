@@ -1001,7 +1001,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
   });
 
   it('rejects forged the x-vercel-cron header without a bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
         headers: { 'x-vercel-cron': '1' },
