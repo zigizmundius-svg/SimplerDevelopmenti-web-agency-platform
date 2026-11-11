@@ -25,7 +25,8 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 const resolveClientSiteMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
 }));
 
@@ -33,7 +34,8 @@ vi.mock('@/lib/portal-client', () => ({
 const authorizePortalMock = vi.fn();
 // resolveStoreSite — used by [categoryId]/route.ts to resolve a site via entitlement check
 const resolveStoreSiteMock = vi.fn();
-vi.mock('@/lib/portal-auth', () => ({
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
   authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
   isAuthError: (r: unknown) =>
     Boolean(r && typeof r === 'object' && 'response' in (r as Record<string, unknown>)),
