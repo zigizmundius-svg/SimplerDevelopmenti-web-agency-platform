@@ -148,3 +148,24 @@ Until that route-by-route review is complete, the safe default is to record miss
 - `seo-crawl-tick` and `seo-gsc-import` have longer network-bound work; route-specific timeouts are required.
 - Some integrations (Google, Microsoft, LinkedIn, Resend, Stripe, Dropbox Sign, AI providers) are optional or may be unconfigured. The scheduler should preserve each route's existing safe no-op behavior and report its result rather than treating every skipped response as an outage.
 - No cron-dispatcher service, migration, VPS resource, or production schedule has been created or enabled by this audit.
+
+## Route-level replay-safety audit (2026-11-11)
+
+The 48-route schedule inventory is internally consistent with `vercel.json` (48/48 paths and schedules match). A first-pass review of high-impact routes found the following recovery properties. This is deliberately a conservative classification: a timeout or process crash can occur after an external side effect has succeeded but before the database records success.
+
+| Route | Current protection | Recovery risk | Required VPS policy |
+|---|---|---|---|
+| `/api/cron/booking-reminders` | Per-booking database claim with a 30-minute lease; stable Resend idempotency key `booking-reminder/<bookingId>`; claim released on handled failure | If delivery succeeds but the worker dies before `reminder_sent_at` is written, a later lease recovery may retry. Provider idempotency is bounded by Resend's retention window, so this is not exactly-once delivery. | Keep bounded retries; alert on repeated claims/failures; do not claim exactly-once semantics. |
+| `/api/cron/email-scheduled-send` (tenant campaigns) | Enqueues a deduplicated `email.campaign_send` job; worker resumes from `email_campaign_sends` and queue has lease/backoff/dead-letter handling | Durable queue path is substantially safer than inline sending. | Drain `internal_jobs` reliably and monitor dead letters. |
+| `/api/cron/email-scheduled-send` (agency/global campaigns) | Sends inline because `internal_jobs.client_id` is non-nullable | A process interruption can leave the campaign without the tenant queue's resume/retry guarantees. | Treat as a separate migration item; do not blindly replay after an ambiguous timeout. Move to a system-owned durable queue or add an explicit resumable send ledger before relying on VPS retries. |
+| `/api/cron/process-linkedin-posts` | Compare-and-set transition `scheduled → publishing` prevents concurrent workers from publishing the same row. | There is no stale-`publishing` lease recovery. A worker crash can strand a row permanently. If LinkedIn accepted the post but the response/database write was lost, automatic retry could create a duplicate; the current API client does not send a provider idempotency key. | Do not automatically reset stale rows to `scheduled`. Add a stale-attempt reconciliation state/process: inspect provider outcome first, then mark published or allow an operator-approved retry. Alert on rows remaining `publishing` beyond the request timeout plus safety margin. |
+| `/api/cron/ai-credits-monthly-regrant` | Checks the ledger for a non-signup grant in the current UTC month before granting. | The check and `grantMonthlyCredits` are not one transaction; balance increment and ledger insert are separate writes. Concurrent cron invocations (or a monthly subscription webhook racing the cron) can both pass the check and grant twice. | Block concurrent execution per client/month and make the period grant atomic with a database-enforced idempotency key/unique constraint. Do not enable catch-up/retry until this is fixed. |
+| `/api/cron/usage-rollup` | Recomputes absolute period totals; upserts a unique per-client/period/resource audit row and pushes Stripe action `set`. | Repeated runs for the same period are designed to converge on the same total. | Safe candidate for retry after verifying Stripe meter semantics and alerting on per-client errors. |
+
+### Dispatcher implications
+
+1. A generic HTTP timeout policy is insufficient. Route execution budgets and replay behavior must be configured per route.
+2. For queue-drain routes, collapse missed ticks into one current invocation; the durable queue is the backlog. Do not replay every missed minute as a burst.
+3. For externally visible publishing or credit grants, use route-specific reconciliation/idempotency before automatic retry. An HTTP 5xx/timeout does not prove that no side effect occurred.
+4. The first production dispatcher release should run only routes classified as safe or explicitly operator-gated. The LinkedIn and monthly AI-credit findings above are blockers for unattended automatic replay.
+5. This review is a first-pass audit of high-impact paths, not proof that all 48 handlers are replay-safe. Complete the remaining route-by-route classification before enabling automatic catch-up.
