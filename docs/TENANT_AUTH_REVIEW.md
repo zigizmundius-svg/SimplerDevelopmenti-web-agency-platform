@@ -54,6 +54,14 @@ The signed impersonation payload contains `staffUserId`, but the original read h
 
 **Remaining hardening:** add an auditable impersonation session record with reason/ticket, actor, target tenant, start/end and mutations; consider immediate revocation rather than relying only on the eight-hour signed-cookie TTL. This patch closes identity substitution; it does not implement those separate controls.
 
+### F-08 — bearer credentials did not consistently revalidate account and tenant membership
+
+The MCP request path already intersected a credential's consent allowlist with live `client_members` membership before building the tool server. The portal REST bearer path reused the credential's stored default client without the same live-membership check; role resolution could fall back to `viewer`, which still satisfies read access. The shared bearer resolvers also validated token status/expiry but did not reject a credential whose owning user had since been deactivated.
+
+**Change on the adaptation branch:** portal API-key and OAuth-token resolution now requires the owning `users.active` record. `authorizePortal` additionally resolves the user's current role on the credential's client for every bearer REST request and denies access when the membership/ownership no longer exists. Session-based support impersonation is intentionally left on its separate path, preserving its viewer-style support access. Unit regressions cover inactive API-key/OAuth owners and removed bearer membership.
+
+**Remaining hardening:** audit all non-`authorizePortal` REST handlers that resolve bearer credentials directly, and define whether user deactivation should also revoke stored credentials in the database or merely make them unusable. Runtime integration coverage is still required before release.
+
 ### F-04 — entitlement checks are separate from tenant authorization
 The tenancy rules explicitly require paid-module entitlement gates in addition to tenant scoping. A tenant member can be properly authenticated and still must not gain an unpurchased module.
 
