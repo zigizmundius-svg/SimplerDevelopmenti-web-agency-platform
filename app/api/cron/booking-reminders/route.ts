@@ -28,7 +28,7 @@ export const runtime = 'nodejs';
  * next cron tick. Successful sends stamp reminder_sent_at and clear the claim;
  * failures clear the claim immediately for retry.
  *
- * Auth: Vercel cron header OR `Authorization: Bearer ${CRON_SECRET}`.
+ * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  *
  * Schedule: every 60 minutes via `vercel.json`. Self-hosted deployments must
  * register the same route in their external scheduler.
