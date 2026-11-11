@@ -168,8 +168,28 @@ export async function authorizePortal(opts?: {
     }
   }
 
+  // Bearer credentials are user-bound. Re-check live tenant membership on
+  // every REST request: MCP has its own allowlist ∩ membership hydration, but
+  // this REST path must not keep serving reads after a member is removed.
+  // Session-based support impersonation intentionally remains a read-only
+  // viewer context when the staff user is not a real tenant member.
+  let role: PortalRole;
+  if (bearer) {
+    const liveRole = await getPortalRole(userId, client.id);
+    if (!liveRole) {
+      return {
+        response: NextResponse.json(
+          { success: false, message: 'Access to this client has been removed.' },
+          { status: 403 },
+        ),
+      };
+    }
+    role = liveRole;
+  } else {
+    role = await resolveRole(userId, client);
+  }
+
   // Resolve role + gate the action (log-only when observeRole is set).
-  const role = await resolveRole(userId, client);
   const gate = roleGate(role, opts?.action ?? 'read', opts?.observeRole ?? false, {
     clientId: client.id,
     userId,
