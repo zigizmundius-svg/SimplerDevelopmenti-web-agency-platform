@@ -55,7 +55,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     process.env.CRON_SECRET = ORIGINAL_ENV;
   });
 
-  it('allows the request through with Vercel cron header when CRON_SECRET is unset', async () => {
+  it('rejects forged the request through with Vercel cron header when CRON_SECRET is unset', async () => {
     delete process.env.CRON_SECRET;
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
@@ -63,10 +63,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as { success: boolean; data: { scanned: number } };
-    expect(json.success).toBe(true);
-    expect(json.data.scanned).toBe(0);
+    expect(res.status).toBe(401);
   });
 
   it('rejects a non-matching bearer token with 401', async () => {
@@ -103,7 +100,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
     expect(res.status).toBe(200);
@@ -124,7 +121,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
     expect(res.status).toBe(200);
@@ -155,7 +152,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
     expect(res.status).toBe(200);
@@ -188,7 +185,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
     const call = notifyAllClientUsersMock.mock.calls[0]![0] as { body: string };
@@ -214,7 +211,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
 
@@ -271,7 +268,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
 
@@ -292,7 +289,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
     const json = (await res.json()) as { data: { durationMs: number } };
@@ -328,7 +325,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       })
     );
 
@@ -351,7 +348,7 @@ describe('GET /api/cron/failing-automations-notify — edge cases', () => {
     await expect(
       GET(
         new Request('http://x/api/cron/failing-automations-notify', {
-          headers: { 'x-vercel-cron': '1' },
+          headers: { authorization: 'Bearer shh' },
         })
       )
     ).rejects.toThrow('connection lost');
