@@ -397,7 +397,7 @@ describe('GET /api/cron/expire-mcp-pendings', () => {
   });
 
   it('rejects forged when x-vercel-cron header is "1" (no bearer required)', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     expireStalePendingsMock.mockResolvedValue({ expired: 0 });
     const res = await expireMcpPendingsRoute.GET(
       makeReq('http://x/api/cron/expire-mcp-pendings', {
