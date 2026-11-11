@@ -191,7 +191,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const { GET } = await import(
       '@/app/api/cron/renew-microsoft-subscriptions/route'
     );
