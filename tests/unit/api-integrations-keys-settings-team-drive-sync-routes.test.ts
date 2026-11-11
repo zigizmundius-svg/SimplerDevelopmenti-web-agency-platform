@@ -956,7 +956,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([]);
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
