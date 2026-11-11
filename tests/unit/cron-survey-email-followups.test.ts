@@ -151,7 +151,7 @@ describe('GET /api/cron/process-survey-email-followups', { timeout: TEST_TIMEOUT
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([]); // sequences: empty queue
     const { GET } = await import('@/app/api/cron/process-survey-email-followups/route');
     const res = await GET(
