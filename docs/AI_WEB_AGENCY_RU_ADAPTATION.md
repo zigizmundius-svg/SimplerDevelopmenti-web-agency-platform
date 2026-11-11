@@ -36,6 +36,7 @@ Required capabilities:
 - Tenant isolation is largely application-scoped; universal PostgreSQL RLS is not established.
 - The codebase is large and has a broad integration/runtime surface.
 - Deployment documentation targets Vercel/Railway, not a validated Russian VPS profile.
+- `vercel.json` currently pins Vercel Functions to `iad1` (Washington, D.C., USA). This is the compute region only; database, object storage, backups, logs and third-party processing locations must be mapped separately. Vercel documents that data may be transferred to the US and other countries where it or its providers operate. Do not put Russian production personal data into this topology on the assumption that changing the function region alone establishes localization or 152-FZ compliance. See [Vercel function regions](https://vercel.com/docs/functions/configuring-functions/region) and [Vercel security/compliance](https://vercel.com/docs/security/compliance).
 - Vercel cron assumptions and external integrations (Stripe, Resend, AI APIs, Google/Microsoft, etc.) need explicit review.
 - A passing tenancy suite does not prove every route, job, cache, export or file path is isolated.
 
