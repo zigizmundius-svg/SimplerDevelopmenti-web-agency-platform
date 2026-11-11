@@ -4,7 +4,7 @@ Status: architecture audit and implementation checklist. This is not a deploymen
 
 ## Executive assessment
 
-The application can run as a Node/Bun web service with PostgreSQL, but the repository is **not yet a turnkey production VPS package**. The root `docker-compose.yml` is a local development stack, and there is no root production Dockerfile. The documented topology currently spans Vercel, Railway, and Cloudflare Workers. Moving only the Next.js process to a Russian VPS would leave other services and data flows outside that host.
+The application can run as a Node/Bun web service with PostgreSQL, but the repository is **not yet a turnkey production VPS package**. The root `docker-compose.yml` is a local development stack, and there is no root production Dockerfile. The documented topology currently spans Vercel, Railway, and Cloudflare Workers. The current Vercel app region in `vercel.json` is `iad1` (US East). Moving only the Next.js process to a Russian VPS would leave other services and data flows outside that host.
 
 The safe direction is a modular self-hosted deployment in which the core platform and primary data stores run in a Russian data centre, while optional external integrations are enabled only after their data flows, contracts, and legal basis are reviewed.
 
