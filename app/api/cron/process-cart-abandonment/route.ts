@@ -23,7 +23,7 @@ const RECOVERY_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  *
  * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  *
- * Runs every 30 minutes (vercel.json: path /api/cron/process-cart-abandonment, schedule: every 30 min).
+ * Cron authentication is Bearer-only via lib/cron-auth.ts.
  */
 async function _GET(req: Request) {
   if (!isAuthorizedCron(req)) {
