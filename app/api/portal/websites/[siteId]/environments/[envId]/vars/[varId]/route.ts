@@ -1,30 +1,40 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
-import { websiteEnvVars } from '@/lib/db/schema';
+import { websiteEnvVars, websiteEnvironments } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { getEnvironmentForClient } from '@/lib/environment-helpers';
 
 /** PATCH - Update an env var */
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ siteId: string; envId: string; varId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
   const { siteId, envId, varId } = await params;
-  const result = await getEnvironmentForClient(parseInt(session.user.id, 10), siteId, envId);
-  if (!result) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
+
+  const [env] = await db.select().from(websiteEnvironments)
+    .where(and(eq(websiteEnvironments.id, parseInt(envId, 10)), eq(websiteEnvironments.websiteId, authorized.site.id)))
+    .limit(1);
+  if (!env) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date(), syncedToVercel: false };
-  if (body.key !== undefined) updates.key = body.key.trim();
+  if (body.key !== undefined) {
+    if (typeof body.key !== 'string' || !body.key.trim()) {
+      return NextResponse.json({ success: false, message: 'key must be a non-empty string' }, { status: 400 });
+    }
+    updates.key = body.key.trim();
+  }
   if (body.value !== undefined) updates.value = String(body.value);
 
   await db.update(websiteEnvVars)
     .set(updates)
-    .where(and(eq(websiteEnvVars.id, parseInt(varId)), eq(websiteEnvVars.environmentId, result.env.id)));
+    .where(and(eq(websiteEnvVars.id, parseInt(varId, 10)), eq(websiteEnvVars.environmentId, env.id)));
 
   return NextResponse.json({ success: true, message: 'Updated.' });
 }
@@ -34,15 +44,21 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ siteId: string; envId: string; varId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
   const { siteId, envId, varId } = await params;
-  const result = await getEnvironmentForClient(parseInt(session.user.id, 10), siteId, envId);
-  if (!result) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
+
+  const [env] = await db.select().from(websiteEnvironments)
+    .where(and(eq(websiteEnvironments.id, parseInt(envId, 10)), eq(websiteEnvironments.websiteId, authorized.site.id)))
+    .limit(1);
+  if (!env) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
   await db.delete(websiteEnvVars)
-    .where(and(eq(websiteEnvVars.id, parseInt(varId)), eq(websiteEnvVars.environmentId, result.env.id)));
+    .where(and(eq(websiteEnvVars.id, parseInt(varId, 10)), eq(websiteEnvVars.environmentId, env.id)));
 
   return NextResponse.json({ success: true, message: 'Deleted.' });
 }
