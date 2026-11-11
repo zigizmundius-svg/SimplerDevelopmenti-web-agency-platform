@@ -217,7 +217,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
   });
 
   it('short-circuits with skipped envelope when Microsoft OAuth is not configured', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     getEnvMicrosoftCredentialsMock.mockImplementation(() => {
       throw new Error('MICROSOFT_CLIENT_ID is required');
     });
@@ -226,21 +226,21 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(401);
   });
 
   it('uses a fallback redirect URI when NEXTAUTH_URL is unset', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     delete process.env.NEXTAUTH_URL;
     const { GET } = await import(
       '@/app/api/cron/renew-microsoft-subscriptions/route'
     );
     await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(getEnvMicrosoftCredentialsMock).toHaveBeenCalledWith(
