@@ -48,6 +48,12 @@ The active-client cookie is validated against accessible clients, which is good.
 
 **Required action:** test forged/expired/revoked impersonation tokens, non-staff attempts, inaccessible tenant IDs, and credential issuance during impersonation. Require reason/ticket, actor, target tenant, start/end and mutations in an audit log. Support view should be read-only by default; write access must be explicit and time-limited.
 
+### F-07 — impersonation cookie was not bound to its issuing staff identity
+
+The signed impersonation payload contains `staffUserId`, but the original read helper only checked that the current caller had a staff role. It did not compare the payload identity with the authenticated session user. A valid cookie copied to another staff account could therefore select the original target tenant. The portal resolver and impersonation status/stop endpoints now pass the authenticated staff user ID to the shared verifier, which rejects a token minted for another identity. A unit regression test covers same-user acceptance, cross-user rejection and non-staff rejection.
+
+**Remaining hardening:** add an auditable impersonation session record with reason/ticket, actor, target tenant, start/end and mutations; consider immediate revocation rather than relying only on the eight-hour signed-cookie TTL. This patch closes identity substitution; it does not implement those separate controls.
+
 ### F-04 — entitlement checks are separate from tenant authorization
 The tenancy rules explicitly require paid-module entitlement gates in addition to tenant scoping. A tenant member can be properly authenticated and still must not gain an unpurchased module.
 
