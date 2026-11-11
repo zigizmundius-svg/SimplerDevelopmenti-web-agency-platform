@@ -62,7 +62,7 @@ describe('GET /api/cron/brain-empty-old-trash — auth + envelope', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const { GET } = await import('@/app/api/cron/brain-empty-old-trash/route');
     const res = await GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
