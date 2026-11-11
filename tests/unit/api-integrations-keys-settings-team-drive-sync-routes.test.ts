@@ -955,7 +955,7 @@ describe('GET /api/cron/drive-sync', () => {
     restoreEnv();
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
+  it('rejects forged the Vercel cron header without bearer token', async () => {
     delete process.env.CRON_SECRET;
     selectQueue.push([]);
     const res = await driveSyncRoute.GET(
@@ -963,12 +963,11 @@ describe('GET /api/cron/drive-sync', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    restoreEnv();
+    expect(res.status).toBe(401);
   });
 
   it('filters out connections without drive scope', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 1,
@@ -993,7 +992,7 @@ describe('GET /api/cron/drive-sync', () => {
     ]);
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1005,7 +1004,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('skips connections whose tenant credentials are revoked or missing', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 1,
@@ -1033,7 +1032,7 @@ describe('GET /api/cron/drive-sync', () => {
       .mockResolvedValueOnce({ status: 'revoked', oauth: {} }); // second -> skipped
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1046,7 +1045,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('persists refreshed tokens and continues to sync', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 5,
@@ -1069,7 +1068,7 @@ describe('GET /api/cron/drive-sync', () => {
 
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1091,7 +1090,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('bootstraps the start page token when the row is missing one', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 6,
@@ -1109,7 +1108,7 @@ describe('GET /api/cron/drive-sync', () => {
 
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1127,7 +1126,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('propagates per-file errors from the sync into failures[]', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 7,
@@ -1150,7 +1149,7 @@ describe('GET /api/cron/drive-sync', () => {
 
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const body = await res.json();
@@ -1163,7 +1162,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('caps failures[] at 20 entries', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 8,
@@ -1185,7 +1184,7 @@ describe('GET /api/cron/drive-sync', () => {
     });
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const body = await res.json();
@@ -1194,7 +1193,7 @@ describe('GET /api/cron/drive-sync', () => {
   });
 
   it('isolates a thrown error to a single connection', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       {
         id: 9,
@@ -1223,7 +1222,7 @@ describe('GET /api/cron/drive-sync', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await driveSyncRoute.GET(
       new Request('http://x/api/cron/drive-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const body = await res.json();
