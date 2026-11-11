@@ -47,7 +47,7 @@ describe('GET /api/cron/failing-automations-notify — auth + envelope', () => {
   });
 
   it('rejects forged the Vercel cron header without bearer token', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const { GET } = await import('@/app/api/cron/failing-automations-notify/route');
     const res = await GET(
       new Request('http://x/api/cron/failing-automations-notify', {
