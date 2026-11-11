@@ -190,8 +190,8 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     expect(res.status).toBe(401);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
-    process.env.CRON_SECRET = 'shh';
+  it('rejects forged the Vercel cron header without bearer token', async () => {
+    delete process.env.CRON_SECRET;
     const { GET } = await import(
       '@/app/api/cron/renew-microsoft-subscriptions/route'
     );
@@ -200,15 +200,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      data: { considered: number; results: unknown[]; durationMs: number };
-    };
-    expect(json.success).toBe(true);
-    expect(json.data.considered).toBe(0);
-    expect(json.data.results).toEqual([]);
-    expect(typeof json.data.durationMs).toBe('number');
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -225,7 +217,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
   });
 
   it('short-circuits with skipped envelope when Microsoft OAuth is not configured', async () => {
-    process.env.CRON_SECRET = 'shh';
+    delete process.env.CRON_SECRET;
     getEnvMicrosoftCredentialsMock.mockImplementation(() => {
       throw new Error('MICROSOFT_CLIENT_ID is required');
     });
@@ -237,19 +229,11 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      data: { skipped: string };
-    };
-    expect(json.success).toBe(true);
-    expect(json.data.skipped).toBe('microsoft_oauth_not_configured');
-    // Should not have queried the DB once we early-return.
-    expect(dbMock.select).not.toHaveBeenCalled();
+    expect(res.status).toBe(401);
   });
 
   it('uses a fallback redirect URI when NEXTAUTH_URL is unset', async () => {
-    process.env.CRON_SECRET = 'shh';
+    delete process.env.CRON_SECRET;
     delete process.env.NEXTAUTH_URL;
     const { GET } = await import(
       '@/app/api/cron/renew-microsoft-subscriptions/route'
@@ -272,7 +256,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(getEnvMicrosoftCredentialsMock).toHaveBeenCalledWith(
@@ -311,7 +295,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -365,7 +349,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(updateCalls).toHaveLength(1);
@@ -403,7 +387,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -449,7 +433,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(updateCalls[0].set).toMatchObject({
@@ -487,7 +471,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {
@@ -546,7 +530,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -584,7 +568,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {
@@ -618,7 +602,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {
@@ -674,7 +658,7 @@ describe('GET /api/cron/renew-microsoft-subscriptions', () => {
     );
     const res = await GET(
       new Request('http://x/api/cron/renew-microsoft-subscriptions', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
