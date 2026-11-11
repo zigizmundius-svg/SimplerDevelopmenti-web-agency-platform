@@ -25,7 +25,7 @@ export const runtime = 'nodejs';
  *
  * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  * Scheduling: declared in `vercel.json` for Vercel deploys. On a RAILWAY deploy
- * vercel.json crons do NOT fire — an external scheduler (Railway cron service,
+ * Cron authentication is Bearer-only via lib/cron-auth.ts.
  * GitHub Actions, cron-as-a-service) must GET this route with the bearer secret.
  */
 
