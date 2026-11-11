@@ -62,6 +62,22 @@ The MCP request path already intersected a credential's consent allowlist with l
 
 **Remaining hardening:** audit all non-`authorizePortal` REST handlers that resolve bearer credentials directly, and define whether user deactivation should also revoke stored credentials in the database or merely make them unusable. Runtime integration coverage is still required before release.
 
+
+### F-09 — several website-management routes authenticated users but did not enforce tenant roles
+
+A focused review of the website API surface found routes that checked only for a session and that the site belonged to one of the caller's clients. Because site resolution establishes tenant membership but does not establish a sufficient role, a low-privilege member could reach sensitive operations such as API-key management, custom-domain management, GitHub collaborator changes and website provisioning.
+
+**Change on the adaptation branch:** the following actions now use `authorizePortalSite` with strict role enforcement (`observeRole: false`):
+- list, create and revoke website API keys — admin role;
+- add and verify custom domains — admin role;
+- add GitHub repository collaborators — admin role;
+- provision/re-provision a website — admin role;
+- read website environments — live membership required, viewer+ allowed.
+
+The shared auth unit suite now includes regressions proving that a member is denied an admin site action and that a user with removed membership is denied site access.
+
+**Remaining work:** this was a focused high-impact slice, not a complete audit of all 877 route handlers in the repository. Continue reviewing the remaining website, CMS, store and integration routes for session-only checks, and classify each operation before applying a role. Do not globally enable `AUTH_ROLE_ENFORCE` until the remaining observe-mode callers have been inventoried and compatibility-tested.
+
 ### F-04 — entitlement checks are separate from tenant authorization
 The tenancy rules explicitly require paid-module entitlement gates in addition to tenant scoping. A tenant member can be properly authenticated and still must not gain an unpurchased module.
 
