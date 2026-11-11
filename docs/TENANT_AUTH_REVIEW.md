@@ -77,9 +77,12 @@ A focused review of the website API surface found routes that checked only for a
 - read/create/update/delete environment variables (which may contain secrets) — admin role;
 - view deployment history — live membership required, viewer+ allowed;
 - view deployment logs and raw HTTP request logs — admin role;
-- publish one or all navigation drafts — admin role.
+- publish one or all navigation drafts — admin role;
+- list custom domains — live membership required, viewer+ allowed; add/remove/promote domains — admin role;
+- read website branding — live membership required, viewer+ allowed; change branding — admin role;
+- inspect deployment/infrastructure status — admin role.
 
-Environment endpoints now resolve the environment by both its ID and the already-authorized website ID. They no longer rely on the active-client cookie helper, so a valid site deep link cannot accidentally resolve against a different active tenant. The deployment, logs and navigation endpoints also use the site-scoped resolver rather than trusting the active-client cookie.
+Environment endpoints now resolve the environment by both its ID and the already-authorized website ID. They no longer rely on the active-client cookie helper, so a valid site deep link cannot accidentally resolve against a different active tenant. Deployment, logs, navigation, domains, branding and status endpoints also use the site-scoped resolver rather than trusting the active-client cookie.
 
 The shared auth unit suite now includes regressions proving that a member is denied an admin site action and that a user with removed membership is denied site access.
 
