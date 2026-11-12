@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { getEnvironmentForClient } from '@/lib/environment-helpers';
 import { db } from '@/lib/db';
 import { websiteEnvVars, websiteEnvironments } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -17,10 +18,11 @@ export async function PATCH(
   });
   if (isAuthError(authorized)) return authorized.response;
 
-  const [env] = await db.select().from(websiteEnvironments)
-    .where(and(eq(websiteEnvironments.id, parseInt(envId, 10)), eq(websiteEnvironments.websiteId, authorized.site.id)))
-    .limit(1);
-  if (!env) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const context = await getEnvironmentForClient(authorized.userId, siteId, envId);
+  if (!context || context.site.id !== authorized.site.id) {
+    return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  }
+  const { env } = context;
 
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date(), syncedToVercel: false };
