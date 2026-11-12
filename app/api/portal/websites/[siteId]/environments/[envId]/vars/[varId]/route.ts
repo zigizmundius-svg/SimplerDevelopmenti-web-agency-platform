@@ -54,10 +54,11 @@ export async function DELETE(
   });
   if (isAuthError(authorized)) return authorized.response;
 
-  const [env] = await db.select().from(websiteEnvironments)
-    .where(and(eq(websiteEnvironments.id, parseInt(envId, 10)), eq(websiteEnvironments.websiteId, authorized.site.id)))
-    .limit(1);
-  if (!env) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const context = await getEnvironmentForClient(authorized.userId, siteId, envId);
+  if (!context || context.site.id !== authorized.site.id) {
+    return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  }
+  const { env } = context;
 
   await db.delete(websiteEnvVars)
     .where(and(eq(websiteEnvVars.id, parseInt(varId, 10)), eq(websiteEnvVars.environmentId, env.id)));
