@@ -3,7 +3,7 @@ import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { websiteEnvironments, websiteEnvVars, websiteBackups } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { snapshotEnvironment } from '@/lib/environment-helpers';
+import { getEnvironmentForClient, snapshotEnvironment } from '@/lib/environment-helpers';
 
 /** POST - Copy env vars from another environment into this one */
 export async function POST(
@@ -18,10 +18,11 @@ export async function POST(
   });
   if (isAuthError(authorized)) return authorized.response;
 
-  const [target] = await db.select().from(websiteEnvironments)
-    .where(and(eq(websiteEnvironments.id, parseInt(envId, 10)), eq(websiteEnvironments.websiteId, authorized.site.id)))
-    .limit(1);
-  if (!target) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  const context = await getEnvironmentForClient(authorized.userId, siteId, envId);
+  if (!context || context.site.id !== authorized.site.id) {
+    return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  }
+  const { env: target } = context;
 
   const body = await req.json();
   const { fromEnvironmentId } = body;
