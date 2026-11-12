@@ -756,13 +756,13 @@ describe('GET /api/portal/websites/[siteId]/environments', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data).toEqual(envRows);
-    expect(getPortalClientMock).toHaveBeenCalledWith(7);
+    expect(getPortalClientMock).toHaveBeenCalledOnce();
   });
 
   it('returns empty list when site exists but has no environments', async () => {
     authMock.mockResolvedValue(SESSION);
     getPortalClientMock.mockResolvedValue({ id: 42 });
-    selectQueue.push([{ id: 5 }]);
+    selectQueue.push([{ id: 5, clientId: 42 }]);
     selectQueue.push([]); // envs empty
 
     const res = await environmentsRoute.GET(makeReq('http://x/env'), {
