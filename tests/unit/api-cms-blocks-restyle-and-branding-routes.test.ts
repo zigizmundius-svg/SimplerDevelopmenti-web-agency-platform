@@ -33,6 +33,18 @@ vi.mock('@/lib/portal-client', async (importOriginal) => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
 }));
 
+const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => {
+  const session = await authMock();
+  if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+  const portalClient = await getPortalClientMock();
+  if (portalClient === null) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+  return { site: { id: siteId, clientId: portalClient?.id ?? 10 }, client: portalClient ?? { id: 10 }, userId: Number(session.user.id), role: 'owner' };
+});
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args as [{ siteId: number }]),
+}));
+
 const getBrandingByWebsiteIdMock = vi.fn();
 const getBrandMessagingMock = vi.fn();
 vi.mock('@/lib/branding', () => ({
