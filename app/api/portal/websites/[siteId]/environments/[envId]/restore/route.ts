@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
-import { getEnvironmentForClient } from '@/lib/environment-helpers';
+import { getEnvironmentForClient, snapshotEnvironment } from '@/lib/environment-helpers';
 import { db } from '@/lib/db';
 import { websiteBackups, websiteEnvVars } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { snapshotEnvironment } from '@/lib/environment-helpers';
 
 /** POST - Restore an environment from a backup */
 export async function POST(
