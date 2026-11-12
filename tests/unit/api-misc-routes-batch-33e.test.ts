@@ -42,6 +42,16 @@ const hasServiceAccessMock = vi.fn();
 vi.mock('@/lib/portal-auth', async (importOriginal) => ({
   ...await importOriginal(),
   hasServiceAccess: (...args: unknown[]) => hasServiceAccessMock(...args),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    const client = await getPortalClientMock();
+    if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
+    const resolved = await resolveClientSiteMock(Number(session.user.id), siteId);
+    if (resolved === null) return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
+    const site = resolved ?? { id: siteId, clientId: client?.id ?? 5 };
+    return { site, client: client ?? { id: 5 }, userId: Number(session.user.id), role: 'owner' };
+  },
 }));
 
 const convertAllSlidesToV2Mock = vi.fn();
