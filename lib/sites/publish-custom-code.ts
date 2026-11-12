@@ -6,7 +6,7 @@
 
 import { db } from '@/lib/db';
 import { clientWebsites } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidateSiteChrome } from '@/lib/sites/site-cache';
 
 export interface PublishCustomCodeResult {
@@ -21,7 +21,7 @@ export interface PublishCustomCodeResult {
  * This prevents a concurrent draft save from being cleared after the publisher
  * has read an older draft (a lost-update race).
  */
-export async function publishSiteCustomCode(siteId: number): Promise<PublishCustomCodeResult> {
+export async function publishSiteCustomCode(siteId: number, clientId: number): Promise<PublishCustomCodeResult> {
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select({
@@ -30,7 +30,7 @@ export async function publishSiteCustomCode(siteId: number): Promise<PublishCust
         draftCustomJs: clientWebsites.draftCustomJs,
       })
       .from(clientWebsites)
-      .where(eq(clientWebsites.id, siteId))
+      .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
       .limit(1)
       .for('update');
 
@@ -47,7 +47,7 @@ export async function publishSiteCustomCode(siteId: number): Promise<PublishCust
         draftUpdatedBy: null,
         updatedAt: new Date(),
       })
-      .where(eq(clientWebsites.id, siteId))
+      .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
       .returning();
 
     return {
@@ -75,5 +75,5 @@ export async function discardSiteCustomCodeDraft(siteId: number): Promise<void> 
       draftUpdatedBy: null,
       updatedAt: new Date(),
     })
-    .where(eq(clientWebsites.id, siteId));
+    .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)));
 }
