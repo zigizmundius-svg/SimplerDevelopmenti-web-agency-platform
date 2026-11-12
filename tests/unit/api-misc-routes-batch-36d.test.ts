@@ -40,7 +40,11 @@ vi.mock('@/lib/portal-auth', async (importOriginal) => ({
     if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
     const client = await getPortalClientMock();
     if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
-    return { site: { id: siteId, clientId: client?.id ?? 42 }, client: client ?? { id: 42 }, userId: Number(session.user.id), role: 'owner' };
+    const [site] = selectQueue.shift() ?? [];
+    if (!site || site.id !== siteId || site.clientId !== client.id) {
+      return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
+    }
+    return { site, client, userId: Number(session.user.id), role: 'owner' };
   },
   isAuthError: (r: unknown) =>
     typeof r === 'object' && r !== null && 'response' in (r as Record<string, unknown>),
