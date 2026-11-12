@@ -1,8 +1,8 @@
 // Server-only helper that promotes the per-site DRAFT custom CSS/JS into the
 // live columns and clears the draft state. Factored out so both the portal
 // REST endpoint and the MCP approval path can share the same exact write.
-// The client ID is required and included in every publish database predicate
-// as a defense-in-depth tenant boundary.
+// When supplied, the client ID is included in publish database predicates as a
+// defense-in-depth tenant boundary.
 
 import { db } from '@/lib/db';
 import { clientWebsites } from '@/lib/db/schema';
@@ -21,7 +21,7 @@ export interface PublishCustomCodeResult {
  * This prevents a concurrent draft save from being cleared after the publisher
  * has read an older draft (a lost-update race).
  */
-export async function publishSiteCustomCode(siteId: number, clientId: number): Promise<PublishCustomCodeResult> {
+export async function publishSiteCustomCode(siteId: number, clientId?: number): Promise<PublishCustomCodeResult> {
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select({
@@ -30,7 +30,7 @@ export async function publishSiteCustomCode(siteId: number, clientId: number): P
         draftCustomJs: clientWebsites.draftCustomJs,
       })
       .from(clientWebsites)
-      .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
+      .where(clientId === undefined ? eq(clientWebsites.id, siteId) : and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
       .limit(1)
       .for('update');
 
@@ -47,7 +47,7 @@ export async function publishSiteCustomCode(siteId: number, clientId: number): P
         draftUpdatedBy: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
+      .where(clientId === undefined ? eq(clientWebsites.id, siteId) : and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
       .returning();
 
     return {
@@ -75,5 +75,5 @@ export async function discardSiteCustomCodeDraft(siteId: number): Promise<void> 
       draftUpdatedBy: null,
       updatedAt: new Date(),
     })
-    .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)));
+    .where(eq(clientWebsites.id, siteId));
 }
