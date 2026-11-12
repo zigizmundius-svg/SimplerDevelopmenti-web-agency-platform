@@ -25,6 +25,21 @@ vi.mock('@/lib/auth', () => ({
   auth: () => authMock(),
 }));
 
+const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => {
+  const session = await authMock();
+  if (!session?.user?.id) {
+    return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
+  }
+  return {
+    site: { id: siteId, clientId: 5, vercelProjectId: 'prj_abc' },
+    client: { id: 5 }, userId: Number(session.user.id), role: 'owner',
+  };
+});
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args as [{ siteId: number }]),
+}));
+
 const getEnvironmentForClientMock = vi.fn();
 const snapshotEnvironmentMock = vi.fn();
 vi.mock('@/lib/environment-helpers', () => ({
