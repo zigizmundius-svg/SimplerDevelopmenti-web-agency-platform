@@ -35,7 +35,7 @@ vi.mock('@/lib/portal-client', async (importOriginal) => ({
 
 const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => {
   const session = await authMock();
-  if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+  if (!session?.user?.id) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
   const siteAccess = await resolveClientSiteMock(Number(session.user.id), siteId);
   if (!siteAccess) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
   const portalClient = await getPortalClientMock();
@@ -650,6 +650,7 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
   });
 
   it('returns 401 when the site does not belong to the user', async () => {
+    resolveClientSiteMock.mockResolvedValueOnce(null);
     state.clientWebsites.length = 0;
     state.clientWebsites.push({ id: 1, clientId: 999, brandingProfileId: null });
     const res = await brandingMod.PUT(
