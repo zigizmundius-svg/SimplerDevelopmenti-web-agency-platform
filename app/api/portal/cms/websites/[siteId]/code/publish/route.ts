@@ -12,7 +12,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
   const { siteId } = await params;
   const authorized = await authorizePortalSite({ siteId: parseInt(siteId, 10), action: 'admin', observeRole: false });
   if (isAuthError(authorized)) return authorized.response;
-  const { site } = authorized;
+  const { site, client } = authorized;
 
   // Refuse no-op publishes so a stray button-click can't silently overwrite
   // live with identical values (also keeps `updatedAt` honest).
@@ -27,7 +27,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
     );
   }
 
-  const result = await publishSiteCustomCode(site.id);
+  const result = await publishSiteCustomCode(site.id, client.id);
 
   return NextResponse.json({
     success: true,
