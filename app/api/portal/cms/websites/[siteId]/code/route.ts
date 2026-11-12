@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { users } from '@/lib/db/schema/auth';
+import { clientWebsites, users } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string }> }) {
