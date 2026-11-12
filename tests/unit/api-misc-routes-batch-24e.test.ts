@@ -23,6 +23,17 @@ vi.mock('@/lib/portal-client', async (importOriginal) => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
 }));
 
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    const client = await getPortalClientMock();
+    if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
+    return { site: { id: siteId, clientId: client?.id ?? 33 }, client: client ?? { id: 33 }, userId: Number(session.user.id), role: 'owner' };
+  },
+}));
+
 vi.mock('drizzle-orm', () => ({
   eq: (a: unknown, b: unknown) => ({ op: 'eq', a, b }),
   and: (...args: unknown[]) => ({ op: 'and', args }),
