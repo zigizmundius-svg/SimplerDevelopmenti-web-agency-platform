@@ -135,3 +135,12 @@ The inventory must include background work and non-HTTP surfaces, not just `app/
 ## 5. Release recommendation
 
 Do not rewrite the upstream auth system wholesale. Preserve the existing central resolvers and guards, but first normalize role vocabulary, make role enforcement fail-closed for the new deployment, audit every caller and add cross-surface tests. No real customer data should enter the fork until these checks and the separate 152-FZ/legal review are complete.
+
+
+### F-10 — custom-code publication could lose concurrent drafts
+
+The portal and MCP approval surfaces previously had separate custom-code publication implementations. Both read draft values and then wrote live values/cleared draft metadata in a separate statement. A concurrent editor save between those statements could be cleared without ever becoming live. The MCP approval path also bypassed the shared publication helper.
+
+**Change on the adaptation branch:** custom-code publication now locks the site row with `SELECT … FOR UPDATE` inside a database transaction, promotes the locked draft, clears draft metadata in the same transaction, and revalidates the site cache only after commit. The portal endpoint and MCP `site:publish` approval now call the same helper. The helper accepts the owning client ID, and both its read and write predicates include the tenant ID when the caller supplies it.
+
+**Remaining verification:** add a transaction-level regression test for concurrent draft save/publish ordering and run the full unit/integration CI suite. This change has been committed but no green CI result has yet been observed.
