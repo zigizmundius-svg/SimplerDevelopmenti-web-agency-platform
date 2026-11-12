@@ -1,30 +1,13 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { clientWebsites } from '@/lib/db/schema';
 import { users } from '@/lib/db/schema/auth';
-import { and, eq } from 'drizzle-orm';
-import { getPortalClient } from '@/lib/portal-client';
-
-async function verifySite(siteIdRaw: string) {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return null;
-  const [site] = await db
-    .select()
-    .from(clientWebsites)
-    .where(and(eq(clientWebsites.id, parseInt(siteIdRaw)), eq(clientWebsites.clientId, client.id)))
-    .limit(1);
-  return site ? { site, userId } : null;
-}
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
-  const ctx = await verifySite(siteId);
-  if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  const { site } = ctx;
+  const authorized = await authorizePortalSite({ siteId: parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorized)) return authorized.response;
+  const { site } = authorized;
 
   // Resolve the draft author name/email so the UI can render "Drafted by X · ago".
   let draftAuthor: { id: number; name: string | null; email: string | null } | null = null;
@@ -63,9 +46,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
-  const ctx = await verifySite(siteId);
-  if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  const { site, userId } = ctx;
+  const authorized = await authorizePortalSite({ siteId: parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorized)) return authorized.response;
+  const { site, userId } = authorized;
 
   const body = await req.json();
   const { customCss, customJs } = body as { customCss?: string; customJs?: string };
