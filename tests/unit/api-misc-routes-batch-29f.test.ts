@@ -24,6 +24,25 @@ vi.mock('@/lib/portal-client', () => ({
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
 }));
 
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) {
+      return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    }
+    const client = await getPortalClientMock();
+    if (!client) {
+      return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    }
+    const [site] = shiftNextSelect();
+    if (!site || site.id !== siteId || site.clientId !== client.id) {
+      return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    }
+    return { site, client, userId: Number(session.user.id), role: 'owner' };
+  },
+}));
+
 // drizzle-orm — stub operators to plain objects (we don't introspect them)
 vi.mock('drizzle-orm', () => ({
   eq: (a: unknown, b: unknown) => ({ op: 'eq', a, b }),
