@@ -36,7 +36,7 @@ vi.mock('@/lib/portal-auth', async (importOriginal) => ({
       return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
     }
     const [site] = shiftNextSelect();
-    if (!site || site.id !== siteId || site.clientId !== client.id) {
+    if (!site || site.id !== siteId || (site.clientId != null && site.clientId !== client.id)) {
       return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
     }
     return { site, client, userId: Number(session.user.id), role: 'owner' };
