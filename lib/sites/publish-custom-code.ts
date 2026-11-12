@@ -31,8 +31,8 @@ export async function publishSiteCustomCode(siteId: number, clientId?: number): 
       })
       .from(clientWebsites)
       .where(clientId === undefined ? eq(clientWebsites.id, siteId) : and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
-      .limit(1)
-      .for('update');
+      .for('update')
+      .limit(1);
 
     if (!existing) throw new Error('Site not found');
 
