@@ -1,8 +1,8 @@
 // Server-only helper that promotes the per-site DRAFT custom CSS/JS into the
 // live columns and clears the draft state. Factored out so both the portal
 // REST endpoint and the MCP approval path can share the same exact write.
-// Tenancy guard is the caller's responsibility — this helper trusts that the
-// caller already verified ownership of the site.
+// The client ID is required and included in every publish database predicate
+// as a defense-in-depth tenant boundary.
 
 import { db } from '@/lib/db';
 import { clientWebsites } from '@/lib/db/schema';
