@@ -271,6 +271,7 @@ beforeEach(() => {
   getPortalClientMock.mockReset();
   resolveClientSiteMock.mockReset();
   resolveClientSiteMock.mockImplementation(async () => selectQueue.shift()?.[0] ?? null);
+  resolveClientSiteMock.mockImplementation(async () => selectQueue.shift()?.[0] ?? null);
   addCollaboratorMock.mockReset();
   convertAllSlidesToV2Mock.mockReset();
   isV2SlidesMock.mockReset();
