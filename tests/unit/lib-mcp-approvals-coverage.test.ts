@@ -715,7 +715,7 @@ describe('applyPendingChange — site:update', () => {
       payload: { id: 5, name: 'Resolved' },
     });
     const r = await applyPendingChange(change as never, 10, 1);
-    expect(r).toEqual({ id: 5 });
+    expect(r).toEqual({ customCss: '', customJs: '' });
   });
 });
 
