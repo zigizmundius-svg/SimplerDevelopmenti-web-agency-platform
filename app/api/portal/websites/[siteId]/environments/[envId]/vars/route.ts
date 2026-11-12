@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { getEnvironmentForClient } from '@/lib/environment-helpers';
 import { db } from '@/lib/db';
-import { websiteEnvVars, websiteEnvironments } from '@/lib/db/schema';
+import { websiteEnvVars } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 
 /** GET - List env vars for an environment (values may contain secrets) */
