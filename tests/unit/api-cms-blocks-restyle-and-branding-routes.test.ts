@@ -37,7 +37,7 @@ const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => 
   const session = await authMock();
   if (!session?.user?.id) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
   const siteAccess = await resolveClientSiteMock(Number(session.user.id), siteId);
-  if (!siteAccess) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+  if (!siteAccess) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
   const portalClient = await getPortalClientMock();
   if (portalClient === null) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
   return { site: { id: siteId, clientId: portalClient?.id ?? 10 }, client: portalClient ?? { id: 10 }, userId: Number(session.user.id), role: 'owner' };
