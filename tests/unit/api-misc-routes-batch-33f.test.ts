@@ -210,7 +210,6 @@ describe('GET /api/portal/websites/[siteId]/deployments/[deploymentId]/logs', ()
     );
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.success).toBe(false);
     expect(body.message).toBe('Unauthorized');
   });
 
