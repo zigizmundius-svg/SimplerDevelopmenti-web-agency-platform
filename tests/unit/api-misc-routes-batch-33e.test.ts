@@ -49,7 +49,7 @@ vi.mock('@/lib/portal-auth', async (importOriginal) => ({
     if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
     const resolved = await resolveClientSiteMock(Number(session.user.id), siteId);
     if (resolved === null) return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
-    const site = resolved ?? { id: siteId, clientId: client?.id ?? 5 };
+    const site = resolved ?? { id: siteId, clientId: client?.id ?? 5, githubRepoName: 'org/repo' };
     return { site, client: client ?? { id: 5 }, userId: Number(session.user.id), role: 'owner' };
   },
 }));
@@ -270,6 +270,7 @@ beforeEach(() => {
   authMock.mockReset();
   getPortalClientMock.mockReset();
   resolveClientSiteMock.mockReset();
+  resolveClientSiteMock.mockImplementation(async () => selectQueue.shift()?.[0] ?? null);
   addCollaboratorMock.mockReset();
   convertAllSlidesToV2Mock.mockReset();
   isV2SlidesMock.mockReset();
