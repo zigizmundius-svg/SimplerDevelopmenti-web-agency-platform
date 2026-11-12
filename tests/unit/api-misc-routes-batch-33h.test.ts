@@ -465,6 +465,7 @@ describe('POST /api/portal/websites/[siteId]/environments/[envId]/sync', () => {
   it('returns 400 when site has no vercelProjectId', async () => {
     authMock.mockResolvedValue(SESSION);
     getEnvironmentForClientMock.mockResolvedValue(envResult({ vercelProjectId: null }));
+    authorizePortalSiteMock.mockResolvedValueOnce({ site: { id: 100, clientId: 5, vercelProjectId: null }, client: { id: 5 }, userId: 7, role: 'owner' });
     const res = await syncRoute.POST(
       makeReq('http://x/sync', { method: 'POST' }),
       { params: Promise.resolve({ siteId: '100', envId: '200' }) },
