@@ -18,13 +18,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const authorizePortalSiteMock = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/portal-auth', () => ({
-  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args),
-  isAuthError: (result: unknown) => Boolean(result && typeof result === 'object' && 'response' in result),
-}));
-
-
 // ---------------------------------------------------------------------------
 // Shared mocks
 // ---------------------------------------------------------------------------
@@ -36,7 +29,7 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/portal-auth', () => ({
   authorizePortalSite: async ({ siteId }: { siteId: number }) => ({
-    site: { id: siteId }, client: { id: 1 }, userId: 1, role: 'owner',
+    site: { id: siteId, clientId: 1 }, client: { id: 1 }, userId: 1, role: 'owner',
   }),
   isAuthError: (value: unknown) => Boolean(value && typeof value === 'object' && 'response' in value),
   hasServiceAccess: vi.fn().mockResolvedValue(true),
@@ -231,12 +224,6 @@ function makeNextRequest(qs = ''): { nextUrl: URL } {
 }
 
 beforeEach(() => {
-  authorizePortalSiteMock.mockResolvedValue({
-    site: { id: 10, clientId: 1 },
-    client: { id: 1 },
-    userId: 7,
-    role: 'admin',
-  });
   vi.clearAllMocks();
   selectQueue.length = 0;
   updateCalls.length = 0;
