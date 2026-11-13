@@ -741,6 +741,8 @@ describe('POST /api/portal/cms/websites/[siteId]/posts', () => {
   });
 
   it('creates a published post with publishedAt set and links categories + tags', async () => {
+    selectQueue.push([{ id: 1 }, { id: 2 }]); // same-site categories
+    selectQueue.push([{ id: 10 }, { id: 11 }, { id: 12 }]); // same-site tags
     selectQueue.push([]); // existing slug check
     insertReturningQueue.push([{ id: 50 }]);
 
