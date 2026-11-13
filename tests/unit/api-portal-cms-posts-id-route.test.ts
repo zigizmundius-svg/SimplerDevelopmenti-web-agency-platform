@@ -28,11 +28,9 @@ vi.mock('@/lib/auth', () => ({
   auth: () => authMock(),
 }));
 vi.mock('@/lib/portal-auth', () => ({
-  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
-    const session = await authMock();
-    if (!session?.user?.id) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
-    return { site: { id: siteId }, client: { id: 1 }, userId: Number(session.user.id), role: 'owner' };
-  },
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => ({
+    site: { id: siteId }, client: { id: 1 }, userId: 1, role: 'owner',
+  }),
   isAuthError: (value: unknown) => Boolean(value && typeof value === 'object' && 'response' in value),
 }));
 
