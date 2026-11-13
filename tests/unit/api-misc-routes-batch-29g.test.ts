@@ -685,7 +685,8 @@ describe('PATCH /api/portal/cms/websites/[siteId]/email-templates/[templateId]',
 
   it('applies scalar field updates', async () => {
     authMock.mockResolvedValueOnce({ user: { id: '42' } });
-    resolveClientSiteMock.mockResolvedValueOnce({ id: 1 });
+    resolveClientSiteMock.mockResolvedValueOnce({ id: 1, clientId: 7 });
+    selectQueue.push([{ id: 9 }]); // branding profile belongs to this tenant
     updateReturnQueue.push([{ id: 2, name: 'New' }]);
     const res = await templatePATCH(
       jsonReq(
