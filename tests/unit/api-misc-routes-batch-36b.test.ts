@@ -14,13 +14,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const authorizePortalSiteMock = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/portal-auth', () => ({
-  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args),
-  isAuthError: (result: unknown) => Boolean(result && typeof result === 'object' && 'response' in result),
-}));
-
-
 // ---------------------------------------------------------------------------
 // Hoisted mocks
 // ---------------------------------------------------------------------------
@@ -37,6 +30,9 @@ vi.mock('@/lib/portal-client', () => ({
 
 const authorizePortalMock = vi.fn();
 vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => ({
+    site: { id: siteId, clientId: 1 }, client: { id: 1 }, userId: 7, role: 'admin',
+  }),
   authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
   isAuthError: (r: unknown) =>
     Boolean(r && typeof r === 'object' && 'response' in (r as Record<string, unknown>)),
@@ -235,12 +231,6 @@ function makeJsonReq(url: string, body: unknown, method = 'POST'): Request {
 }
 
 beforeEach(() => {
-  authorizePortalSiteMock.mockResolvedValue({
-    site: { id: 10, clientId: 1 },
-    client: { id: 1 },
-    userId: 7,
-    role: 'admin',
-  });
   vi.clearAllMocks();
   selectQueue = [];
   writeReturnQueue = [];
