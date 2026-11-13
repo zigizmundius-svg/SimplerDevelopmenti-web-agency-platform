@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { clientWebsites, siteBranding, brandingProfiles } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidateSiteChrome } from '@/lib/sites/site-cache';
 
 const DEFAULTS = {
@@ -101,7 +101,7 @@ export async function PUT(
     [result] = await db.insert(siteBranding).values(values).returning();
   }
 
-  const [siteRow] = await db.select({ brandingProfileId: clientWebsites.brandingProfileId })
+  const [siteRow] = await db.select({ brandingProfileId: clientWebsites.brandingProfileId, clientId: clientWebsites.clientId })
     .from(clientWebsites)
     .where(eq(clientWebsites.id, site.id))
     .limit(1);
@@ -126,7 +126,7 @@ export async function PUT(
       faviconUrl: values.faviconUrl,
       ogImageUrl: values.ogImageUrl,
       updatedAt: new Date(),
-    }).where(eq(brandingProfiles.id, siteRow.brandingProfileId));
+    }).where(and(eq(brandingProfiles.id, siteRow.brandingProfileId), eq(brandingProfiles.clientId, site.clientId)));
   }
 
   revalidateSiteChrome(site.id);
