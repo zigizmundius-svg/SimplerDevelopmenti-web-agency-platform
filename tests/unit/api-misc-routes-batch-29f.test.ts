@@ -394,6 +394,7 @@ describe('DELETE /api/portal/cms/websites/[siteId]/categories/[id]', () => {
 
 describe('GET /api/portal/cms/websites/[siteId]/code', () => {
   it('returns 401 when no session', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response('Unauthorized', { status: 401 }) });
     authMock.mockResolvedValue(null);
     const res = await siteCodeRoute.GET(
       new Request('http://x/api/portal/cms/websites/1/code'),
