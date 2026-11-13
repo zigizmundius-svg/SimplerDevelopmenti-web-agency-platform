@@ -4,9 +4,8 @@ import { publishSiteCustomCode } from '@/lib/sites/publish-custom-code';
 
 /**
  * Publishes the draft custom CSS/JS to live and clears the draft.
- * Mirrors MCP `sites_publish_custom_code`. The same `publishSiteCustomCode`
- * helper is intended to be reused by the MCP approvals `site:publish` case
- * in a follow-up commit.
+ * Mirrors MCP `sites_publish_custom_code`. Portal and MCP approvals share
+ * the same transactional publication helper.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
