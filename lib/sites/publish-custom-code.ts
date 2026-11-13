@@ -28,6 +28,8 @@ export async function publishSiteCustomCode(siteId: number, clientId?: number): 
         id: clientWebsites.id,
         draftCustomCss: clientWebsites.draftCustomCss,
         draftCustomJs: clientWebsites.draftCustomJs,
+        customCss: clientWebsites.customCss,
+        customJs: clientWebsites.customJs,
       })
       .from(clientWebsites)
       .where(clientId === undefined ? eq(clientWebsites.id, siteId) : and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)))
@@ -35,6 +37,15 @@ export async function publishSiteCustomCode(siteId: number, clientId?: number): 
       .limit(1);
 
     if (!existing) throw new Error('Site not found');
+
+    // Re-check publishability while holding the row lock. The portal route's
+    // earlier preflight is only a UX optimization and may be stale if another
+    // editor discarded or published the draft before this transaction began.
+    const noDraft = existing.draftCustomCss === null && existing.draftCustomJs === null;
+    const draftMatchesLive =
+      (existing.draftCustomCss ?? null) === (existing.customCss ?? null) &&
+      (existing.draftCustomJs ?? null) === (existing.customJs ?? null);
+    if (noDraft || draftMatchesLive) throw new Error('No draft changes to publish');
 
     const [row] = await tx
       .update(clientWebsites)
