@@ -1,42 +1,28 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { clientWebsites } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { discardSiteCustomCodeDraft } from '@/lib/sites/publish-custom-code';
 
-async function verifySite(siteIdRaw: string) {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return null;
-  const [site] = await db
-    .select({ id: clientWebsites.id, customCss: clientWebsites.customCss, customJs: clientWebsites.customJs })
-    .from(clientWebsites)
-    .where(and(eq(clientWebsites.id, parseInt(siteIdRaw)), eq(clientWebsites.clientId, client.id)))
-    .limit(1);
-  return site || null;
-}
-
 /**
- * Clears draft_custom_css, draft_custom_js, draft_updated_at, draft_updated_by.
- * Leaves live values untouched. Returns the current live values so the UI
- * can re-seed the editor without a second round-trip.
+ * Clears the draft custom CSS/JS without touching live. Only site admins may
+ * discard code; the write is tenant-scoped again inside the helper.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ siteId: string }> }) {
-  const { siteId } = await params;
-  const site = await verifySite(siteId);
-  if (!site) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  const { siteId: siteIdRaw } = await params;
+  const siteId = Number.parseInt(siteIdRaw, 10);
+  if (!Number.isSafeInteger(siteId) || siteId <= 0) {
+    return NextResponse.json({ success: false, message: 'Invalid site id' }, { status: 400 });
+  }
 
-  await discardSiteCustomCodeDraft(site.id);
+  const authorized = await authorizePortalSite({ siteId, action: 'admin', observeRole: false });
+  if (isAuthError(authorized)) return authorized.response;
+
+  await discardSiteCustomCodeDraft(authorized.site.id, authorized.client.id);
 
   return NextResponse.json({
     success: true,
     data: {
-      customCss: site.customCss || '',
-      customJs: site.customJs || '',
+      customCss: authorized.site.customCss || '',
+      customJs: authorized.site.customJs || '',
       draftCustomCss: null,
       draftCustomJs: null,
       draftUpdatedAt: null,
