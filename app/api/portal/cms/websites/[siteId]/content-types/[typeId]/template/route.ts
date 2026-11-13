@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
@@ -80,6 +81,8 @@ function makeDefaultTemplate() {
 // vs "you have a saved template".
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
@@ -110,6 +113,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
 // hides the placeholder from the picker once one exists.
 export async function PUT(req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
