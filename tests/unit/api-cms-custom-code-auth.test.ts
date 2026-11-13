@@ -24,7 +24,10 @@ vi.mock('@/lib/db/schema', () => ({
   taxonomyTerms: { id: 'taxonomyTerms.id', taxonomyId: 'taxonomyTerms.taxonomyId', sortOrder: 'taxonomyTerms.sortOrder', name: 'taxonomyTerms.name' },
   users: { id: 'users.id', name: 'users.name', email: 'users.email' },
 }));
-vi.mock('@/lib/sites/publish-custom-code', () => ({ discardSiteCustomCodeDraft: vi.fn() }));
+vi.mock('@/lib/sites/publish-custom-code', () => ({
+  discardSiteCustomCodeDraft: vi.fn(),
+  publishSiteCustomCode: vi.fn(),
+}));
 
 vi.mock('drizzle-orm', () => ({
   eq: (a: unknown, b: unknown) => ({ a, b }),
