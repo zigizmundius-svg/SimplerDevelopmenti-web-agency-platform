@@ -83,6 +83,22 @@ describe('publishSiteCustomCode', () => {
     expect(revalidateMock).toHaveBeenCalledWith(7);
   });
 
+  it('preserves live JS when only a CSS draft exists', async () => {
+    const state = setup({
+      id: 7,
+      draftCustomCss: 'new css',
+      draftCustomJs: null,
+      customCss: 'old css',
+      customJs: 'keep this live JS',
+    });
+
+    await publishSiteCustomCode(7, 10);
+    expect(state.set).toHaveBeenCalledWith(expect.objectContaining({
+      customCss: 'new css',
+      customJs: 'keep this live JS',
+    }));
+  });
+
   it('does not revalidate when the site is outside the tenant scope', async () => {
     setup(null);
     await expect(publishSiteCustomCode(7, 99)).rejects.toThrow('Site not found');
