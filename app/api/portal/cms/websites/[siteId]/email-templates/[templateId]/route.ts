@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { websiteEmailTemplates } from '@/lib/db/schema';
+import { websiteEmailTemplates, brandingProfiles } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { resolveClientSite } from '@/lib/portal-client';
 import { renderBlocksToEmailHtml } from '@/lib/email';
@@ -42,6 +42,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ siteId
 
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date() };
+
+  if (body.brandingProfileId !== undefined && body.brandingProfileId !== null) {
+    const [profile] = await db.select({ id: brandingProfiles.id })
+      .from(brandingProfiles)
+      .where(and(
+        eq(brandingProfiles.id, body.brandingProfileId),
+        eq(brandingProfiles.clientId, site.clientId),
+      ))
+      .limit(1);
+    if (!profile) {
+      return NextResponse.json({ success: false, message: 'Branding profile not found for this website.' }, { status: 400 });
+    }
+  }
 
   if (body.name !== undefined) updates.name = body.name;
   if (body.subject !== undefined) updates.subject = body.subject;
