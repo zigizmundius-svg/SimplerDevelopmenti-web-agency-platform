@@ -18,7 +18,7 @@ export async function validatePostTaxonomyRefs(
   categoryIds: unknown,
   tagIds: unknown,
 ): Promise<PostTaxonomyRefsValidation> {
-  const validateIds = (value: unknown, label: string): number[] | null => {
+  const validateIds = (value: unknown): number[] | null => {
     if (value === undefined || value === null) return [];
     if (!Array.isArray(value) || value.some(id => !Number.isSafeInteger(id) || id <= 0)) {
       return null;
@@ -26,9 +26,9 @@ export async function validatePostTaxonomyRefs(
     return [...new Set(value as number[])];
   };
 
-  const categoryList = validateIds(categoryIds, 'category');
+  const categoryList = validateIds(categoryIds);
   if (!categoryList) return { valid: false, message: 'categoryIds must be an array of positive integer IDs.' };
-  const tagList = validateIds(tagIds, 'tag');
+  const tagList = validateIds(tagIds);
   if (!tagList) return { valid: false, message: 'tagIds must be an array of positive integer IDs.' };
 
   if (categoryList.length) {
