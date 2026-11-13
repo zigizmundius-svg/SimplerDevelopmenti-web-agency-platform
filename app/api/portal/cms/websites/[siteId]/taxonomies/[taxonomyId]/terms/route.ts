@@ -72,6 +72,19 @@ export async function POST(
     return NextResponse.json({ success: false, message: 'Name and slug are required' }, { status: 400 });
   }
 
+  if (parentId !== undefined && parentId !== null) {
+    if (!Number.isSafeInteger(parentId) || parentId <= 0) {
+      return NextResponse.json({ success: false, message: 'parentId must be a positive integer.' }, { status: 400 });
+    }
+    const [parent] = await db.select({ id: taxonomyTerms.id })
+      .from(taxonomyTerms)
+      .where(and(eq(taxonomyTerms.id, parentId), eq(taxonomyTerms.taxonomyId, access.taxonomy.id)))
+      .limit(1);
+    if (!parent) {
+      return NextResponse.json({ success: false, message: 'parentId must reference a term in this taxonomy.' }, { status: 400 });
+    }
+  }
+
   const [existing] = await db
     .select({ id: taxonomyTerms.id })
     .from(taxonomyTerms)
