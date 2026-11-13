@@ -267,8 +267,8 @@ body {
      gold; anything a reader has to actually read uses this. */
   --retro-label: #9A3D12;
 
-  --retro-display: var(--font-orbitron), ui-sans-serif, system-ui, sans-serif;
-  --retro-body: var(--font-raleway), ui-sans-serif, system-ui, sans-serif;
+  --retro-display: 'Arial Black', 'Trebuchet MS', ui-sans-serif, system-ui, sans-serif;
+  --retro-body: 'Segoe UI', 'Trebuchet MS', ui-sans-serif, system-ui, sans-serif;
 
   /* Hairline rules read as "printed" rather than "UI" at this weight. */
   --retro-rule: 1px solid color-mix(in srgb, var(--retro-mid) 40%, transparent);
