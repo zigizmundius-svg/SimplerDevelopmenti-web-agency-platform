@@ -153,3 +153,30 @@ The portal publish endpoint checked for a draft using the site snapshot returned
 **Change on the adaptation branch:** the shared publisher now selects both draft and live columns under `FOR UPDATE` and revalidates that a real, changed draft still exists before issuing the update. The portal endpoint maps this stale-request condition to HTTP 409 instead of treating it as a successful publish. The publisher also preserves live CSS/JS fields when only the other field has a draft; an empty-string draft remains an intentional clear. MCP approval writes now preserve empty strings consistently with the portal editor. Dedicated unit tests cover stale/no-draft rejection, locked promotion, partial-field preservation, and tenant-scoped not-found behavior.
 
 **Remaining verification:** wait for CI on the latest adaptation-branch commit; do not release until the new test and build pass.
+
+
+### F-12 — CMS routes relied on site membership without enforcing portal roles
+
+A focused CMS audit found a broad pattern: many routes authenticated a session and resolved a site through `resolveClientSite`, but did not enforce the caller's tenant role. A viewer could therefore reach mutation handlers for posts, revisions, categories, tags, taxonomies, custom fields, content-type templates, media, email templates and tracking configuration. Website custom-code discard and content-type CSS/JS endpoints also lacked the strict admin role gate already present on the main site-code editor.
+
+**Change on the adaptation branch:** the CMS route handlers now call `authorizePortalSite` with `observeRole: false` and explicit action levels. Reads use `read`; ordinary content and metadata mutations use `write`; custom code and tracking configuration use `admin`; deleting a website uses `owner`. The focused slice covers posts and revisions, categories/tags, taxonomies and terms, content types and custom fields/templates, media, email templates, block templates, AI restyling/branding generation, website settings and tracking. Custom-code discard is now admin-only and its database write includes both website ID and client ID.
+
+**Remaining verification:** add route-level negative tests for representative viewer/member denials, inspect all remaining CMS routes (including HTML/ZIP upload and any routes not in the changed list), and run full CI on the latest branch head. Do not turn on global role enforcement based only on this slice.
+
+### F-13 — post category/tag association IDs were not checked against the post's website
+
+Post create/update handlers scoped the post itself to the current website but accepted category and tag IDs from the request body without verifying those IDs belonged to that same website. The join tables do not carry a tenant key, so a caller could attach another website's taxonomy rows to its post.
+
+**Change on the adaptation branch:** a shared validator checks that all supplied category and tag IDs are positive integers and resolve within the current website before either post creation or update proceeds. Duplicate IDs are normalized before comparison. Cross-site or malformed references fail with HTTP 400. Unit tests cover cross-site IDs, invalid input, duplicate normalization and empty associations.
+
+### F-14 — global built-in taxonomy terms were mutable through tenant routes
+
+Taxonomy lookup intentionally allowed site-owned taxonomies and global built-ins for display. The same resolver was also used by create/update/delete term handlers, which meant a tenant could mutate terms attached to a global taxonomy shared by other tenants.
+
+**Change on the adaptation branch:** tenant term mutations now reject global built-in taxonomies and allow writes only when the taxonomy is owned by the current website. Global built-ins remain readable.
+
+### F-15 — email templates could reference another tenant's branding profile
+
+Email-template creation accepted an explicit branding profile ID and loaded the profile by ID alone. The update route also accepted a profile ID without checking its owning client.
+
+**Change on the adaptation branch:** explicit and updated branding profile references are now checked against the website's owning client before being stored or rendered.
