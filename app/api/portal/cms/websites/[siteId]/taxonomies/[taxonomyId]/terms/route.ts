@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
@@ -37,6 +38,8 @@ export async function GET(
   { params }: { params: Promise<{ siteId: string; taxonomyId: string }> },
 ) {
   const { siteId, taxonomyId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const access = await verifyTaxonomyAccess(siteId, taxonomyId);
   if (!access) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
@@ -54,6 +57,8 @@ export async function POST(
   { params }: { params: Promise<{ siteId: string; taxonomyId: string }> },
 ) {
   const { siteId, taxonomyId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const access = await verifyTaxonomyAccess(siteId, taxonomyId);
   if (!access) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
