@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { validatePostTaxonomyRefs } from '@/lib/sites/validate-post-taxonomy-refs';
 import crypto from 'node:crypto';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -70,6 +71,11 @@ export async function PUT(
 
   const body = await req.json();
   const { title, slug, postType, excerpt, content, coverImage, published, categoryIds, tagIds, seoTitle, seoDescription, ogImage, noIndex, canonicalUrl, customCss, customJs, revisionTrigger, scheduledPublishAt } = body;
+
+  const taxonomyRefs = await validatePostTaxonomyRefs(site.id, categoryIds, tagIds);
+  if (!taxonomyRefs.valid) {
+    return NextResponse.json({ success: false, message: taxonomyRefs.message }, { status: 400 });
+  }
 
   // Gate raw-HTML / raw-script block types to admin/editor staff only.
   if (content !== undefined) {
