@@ -27,7 +27,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
     );
   }
 
-  let result;
+  let result: Awaited<ReturnType<typeof publishSiteCustomCode>>;
   try {
     result = await publishSiteCustomCode(site.id, client.id);
   } catch (error) {
