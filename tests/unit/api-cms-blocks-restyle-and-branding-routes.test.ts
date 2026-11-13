@@ -33,15 +33,12 @@ vi.mock('@/lib/portal-client', async (importOriginal) => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
 }));
 
-const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => {
-  const session = await authMock();
-  if (!session?.user?.id) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
-  const siteAccess = await resolveClientSiteMock(Number(session.user.id), siteId);
-  if (!siteAccess) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
-  const portalClient = await getPortalClientMock();
-  if (portalClient === null) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
-  return { site: { id: siteId, clientId: portalClient?.id ?? 10 }, client: portalClient ?? { id: 10 }, userId: Number(session.user.id), role: 'owner' };
-});
+const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => ({
+  site: { id: siteId, clientId: 10 },
+  client: { id: 10 },
+  userId: 7,
+  role: 'owner',
+}));
 vi.mock('@/lib/portal-auth', async (importOriginal) => ({
   ...await importOriginal(),
   authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args as [{ siteId: number }]),
@@ -728,6 +725,7 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
     state.clientWebsites.push({ id: 1, clientId: 10, brandingProfileId: 77 });
     state.brandingProfiles.push({
       id: 77,
+      clientId: 10,
       primaryColor: '#oldprof',
       logoUrl: 'old.png',
       navTemplate: 'old-tmpl',
@@ -764,6 +762,7 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
     state.clientWebsites.push({ id: 1, clientId: 10, brandingProfileId: 88 });
     state.brandingProfiles.push({
       id: 88,
+      clientId: 10,
       logoUrl: 'previous.png',
       logoAlt: 'prev',
     });
