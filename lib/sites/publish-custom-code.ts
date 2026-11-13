@@ -50,8 +50,8 @@ export async function publishSiteCustomCode(siteId: number, clientId?: number): 
     const [row] = await tx
       .update(clientWebsites)
       .set({
-        customCss: existing.draftCustomCss,
-        customJs: existing.draftCustomJs,
+        customCss: existing.draftCustomCss ?? existing.customCss,
+        customJs: existing.draftCustomJs ?? existing.customJs,
         draftCustomCss: null,
         draftCustomJs: null,
         draftUpdatedAt: null,
