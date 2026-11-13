@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { dbMock, revalidateMock } = vi.hoisted(() => ({
-  dbMock: { transaction: vi.fn() },
+  dbMock: { transaction: vi.fn(), update: vi.fn() },
   revalidateMock: vi.fn(),
 }));
 
@@ -16,7 +16,7 @@ vi.mock('drizzle-orm', () => ({
 }));
 vi.mock('@/lib/sites/site-cache', () => ({ revalidateSiteChrome: revalidateMock }));
 
-import { publishSiteCustomCode } from '@/lib/sites/publish-custom-code';
+import { publishSiteCustomCode, discardSiteCustomCodeDraft } from '@/lib/sites/publish-custom-code';
 
 function setup(existing: Record<string, unknown> | null) {
   const limit = vi.fn().mockResolvedValue(existing ? [existing] : []);
@@ -103,5 +103,28 @@ describe('publishSiteCustomCode', () => {
     setup(null);
     await expect(publishSiteCustomCode(7, 99)).rejects.toThrow('Site not found');
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it('discards drafts with both site and tenant predicates', async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    dbMock.update.mockReturnValue({ set });
+
+    await discardSiteCustomCodeDraft(7, 10);
+
+    expect(dbMock.update).toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({
+      draftCustomCss: null,
+      draftCustomJs: null,
+      draftUpdatedAt: null,
+      draftUpdatedBy: null,
+    }));
+    expect(where).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'and',
+      conditions: expect.arrayContaining([
+        expect.objectContaining({ op: 'eq', value: 7 }),
+        expect.objectContaining({ op: 'eq', value: 10 }),
+      ]),
+    }));
   });
 });
