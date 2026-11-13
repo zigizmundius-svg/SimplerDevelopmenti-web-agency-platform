@@ -27,7 +27,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
     );
   }
 
-  const result = await publishSiteCustomCode(site.id, client.id);
+  let result;
+  try {
+    result = await publishSiteCustomCode(site.id, client.id);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'No draft changes to publish') {
+      return NextResponse.json(
+        { success: false, message: 'No draft changes to publish.' },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   return NextResponse.json({
     success: true,
