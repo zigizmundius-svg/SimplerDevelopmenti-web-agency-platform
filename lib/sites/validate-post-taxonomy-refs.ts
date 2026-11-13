@@ -2,10 +2,9 @@ import { db } from '@/lib/db';
 import { categories, tags } from '@/lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 
-export interface PostTaxonomyRefsValidation {
-  valid: boolean;
-  message?: string;
-}
+export type PostTaxonomyRefsValidation =
+  | { valid: true; categoryIds: number[]; tagIds: number[] }
+  | { valid: false; message: string };
 
 /**
  * Ensures category/tag associations supplied by a portal post editor belong
@@ -47,5 +46,5 @@ export async function validatePostTaxonomyRefs(
     }
   }
 
-  return { valid: true };
+  return { valid: true, categoryIds: categoryList, tagIds: tagList };
 }
