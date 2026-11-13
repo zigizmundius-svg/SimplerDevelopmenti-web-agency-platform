@@ -434,7 +434,8 @@ export async function applyPendingChange(change: typeof mcpPendingChanges.$infer
         patch.draftUpdatedAt = new Date();
         patch.draftUpdatedBy = applierUserId;
         if (payload.customCss !== undefined) {
-          patch.draftCustomCss = payload.customCss || null;
+          // Preserve an empty string: publishing it intentionally clears live CSS.
+          patch.draftCustomCss = payload.customCss ?? null;
         }
         if (payload.customJs !== undefined) {
           patch.draftCustomJs = payload.customJs || null;
