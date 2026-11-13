@@ -22,6 +22,12 @@ vi.mock('@/lib/auth', () => ({
   auth: () => authMock(),
 }));
 
+const authorizePortalSiteMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args),
+  isAuthError: (result: unknown) => Boolean(result && typeof result === 'object' && 'response' in result),
+}));
+
 const getPortalClientMock = vi.fn();
 const resolveClientSiteMock = vi.fn();
 vi.mock('@/lib/portal-client', () => ({
@@ -196,6 +202,7 @@ function jsonReq(body: unknown, method = 'POST'): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authorizePortalSiteMock.mockResolvedValue({ site: { id: 1, clientId: 7 }, client: { id: 7 }, userId: 42, role: 'owner' });
   selectQueue.length = 0;
   updateCalls.length = 0;
   updateReturnQueue.length = 0;
