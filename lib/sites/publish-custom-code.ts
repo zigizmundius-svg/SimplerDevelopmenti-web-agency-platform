@@ -76,7 +76,7 @@ export async function publishSiteCustomCode(siteId: number, clientId?: number): 
  * Clears the draft custom CSS/JS without touching live. Used by the portal
  * "Discard draft" affordance. Caller must scope to the acting client first.
  */
-export async function discardSiteCustomCodeDraft(siteId: number): Promise<void> {
+export async function discardSiteCustomCodeDraft(siteId: number, clientId: number): Promise<void> {
   await db
     .update(clientWebsites)
     .set({
@@ -86,5 +86,5 @@ export async function discardSiteCustomCodeDraft(siteId: number): Promise<void> 
       draftUpdatedBy: null,
       updatedAt: new Date(),
     })
-    .where(eq(clientWebsites.id, siteId));
+    .where(and(eq(clientWebsites.id, siteId), eq(clientWebsites.clientId, clientId)));
 }
