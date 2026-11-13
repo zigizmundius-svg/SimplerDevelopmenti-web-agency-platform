@@ -50,12 +50,12 @@ describe('validatePostTaxonomyRefs', () => {
 
   it('deduplicates IDs and accepts site-scoped categories and tags', async () => {
     whereMock.mockResolvedValue([{ id: 44 }]);
-    await expect(validatePostTaxonomyRefs(12, [44, 44], [55])).resolves.toEqual({ valid: true });
+    await expect(validatePostTaxonomyRefs(12, [44, 44], [55])).resolves.toEqual({ valid: true, categoryIds: [44], tagIds: [55] });
     expect(whereMock).toHaveBeenCalledTimes(2);
   });
 
   it('allows omitted or empty associations without querying', async () => {
-    await expect(validatePostTaxonomyRefs(12, undefined, null)).resolves.toEqual({ valid: true });
+    await expect(validatePostTaxonomyRefs(12, undefined, null)).resolves.toEqual({ valid: true, categoryIds: [], tagIds: [] });
     expect(selectMock).not.toHaveBeenCalled();
   });
 });
