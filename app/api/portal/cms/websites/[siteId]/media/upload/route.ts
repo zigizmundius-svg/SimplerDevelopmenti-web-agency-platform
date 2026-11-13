@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { media } from '@/lib/db/schema';
@@ -14,6 +15,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const userId = parseInt(session.user.id, 10);
   const site = await resolveClientSite(userId, parseInt(siteId));
   if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
