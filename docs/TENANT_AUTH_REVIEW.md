@@ -173,10 +173,10 @@ Post create/update handlers scoped the post itself to the current website but ac
 
 Taxonomy lookup intentionally allowed site-owned taxonomies and global built-ins for display. The same resolver was also used by create/update/delete term handlers, which meant a tenant could mutate terms attached to a global taxonomy shared by other tenants.
 
-**Change on the adaptation branch:** tenant term mutations now reject global built-in taxonomies and allow writes only when the taxonomy is owned by the current website. Global built-ins remain readable.
+**Change on the adaptation branch:** tenant term mutations now reject global built-in taxonomies and allow writes only when the taxonomy is owned by the current website. Parent-term IDs on create/update are also checked against that same taxonomy, preventing cross-taxonomy parent links. Global built-ins remain readable.
 
 ### F-15 — email templates could reference another tenant's branding profile
 
 Email-template creation accepted an explicit branding profile ID and loaded the profile by ID alone. The update route also accepted a profile ID without checking its owning client.
 
-**Change on the adaptation branch:** explicit and updated branding profile references are now checked against the website's owning client before being stored or rendered.
+**Change on the adaptation branch:** explicit and updated email-template branding profile references are now checked against the website's owning client before being stored or rendered. Seeded email templates and the website branding updater also constrain linked profile reads/writes to the owning client.
