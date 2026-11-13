@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { validatePostTaxonomyRefs } from '@/lib/sites/validate-post-taxonomy-refs';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { posts, postCategories, postTags } from '@/lib/db/schema';
@@ -45,6 +46,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
 
   const body = await req.json();
   const { title, slug, postType, excerpt, content, coverImage, published, categoryIds, tagIds, seoTitle, seoDescription, ogImage, noIndex, canonicalUrl } = body;
+
+  const taxonomyRefs = await validatePostTaxonomyRefs(site.id, categoryIds, tagIds);
+  if (!taxonomyRefs.valid) {
+    return NextResponse.json({ success: false, message: taxonomyRefs.message }, { status: 400 });
+  }
 
   if (!title || !slug || !content) {
     return NextResponse.json({ success: false, message: 'title, slug, and content are required' }, { status: 400 });
