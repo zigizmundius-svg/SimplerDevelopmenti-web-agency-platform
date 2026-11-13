@@ -80,7 +80,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ siteId: 
       brandingProfileName: brandingProfiles.name,
     })
     .from(media)
-    .leftJoin(brandingProfiles, eq(media.brandingProfileId, brandingProfiles.id))
+    .leftJoin(brandingProfiles, and(eq(media.brandingProfileId, brandingProfiles.id), eq(brandingProfiles.clientId, client.id)))
     .where(and(...conditions))
     .orderBy(desc(media.createdAt))
     .limit(limit)
