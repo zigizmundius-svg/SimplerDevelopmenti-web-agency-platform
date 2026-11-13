@@ -633,7 +633,7 @@ describe('applyPendingChange — site:update', () => {
     expect(p.name).toBeUndefined();
   });
 
-  it('clears draftCustomCss when customCss is empty string', async () => {
+  it('preserves an empty draftCustomCss so publishing can clear live CSS', async () => {
     queueSelect([[{ id: 5 }]]);
     let patch: Record<string, unknown> | null = null;
     dbMock.update.mockImplementation(() => {
@@ -652,7 +652,7 @@ describe('applyPendingChange — site:update', () => {
       payload: { customCss: '' },
     });
     await applyPendingChange(change as never, 10, 1);
-    expect((patch as Record<string, unknown>).draftCustomCss).toBeNull();
+    expect((patch as Record<string, unknown>).draftCustomCss).toBe('');
   });
 
   it('writes draft JS when customJs is in payload', async () => {
