@@ -54,6 +54,19 @@ export async function PUT(
 
   const body = await req.json();
 
+  if (body.parentId !== undefined && body.parentId !== null) {
+    if (!Number.isSafeInteger(body.parentId) || body.parentId <= 0 || body.parentId === access.term.id) {
+      return NextResponse.json({ success: false, message: 'parentId must reference another term in this taxonomy.' }, { status: 400 });
+    }
+    const [parent] = await db.select({ id: taxonomyTerms.id })
+      .from(taxonomyTerms)
+      .where(and(eq(taxonomyTerms.id, body.parentId), eq(taxonomyTerms.taxonomyId, access.taxonomy.id)))
+      .limit(1);
+    if (!parent) {
+      return NextResponse.json({ success: false, message: 'parentId must reference a term in this taxonomy.' }, { status: 400 });
+    }
+  }
+
   const [updated] = await db
     .update(taxonomyTerms)
     .set({
