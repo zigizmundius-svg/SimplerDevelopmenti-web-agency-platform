@@ -3,7 +3,7 @@ import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { websiteEmailTemplates, clientWebsites, brandingProfiles, clients } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { resolveClientSite } from '@/lib/portal-client';
 import { getDefaultTemplates } from '@/lib/email/default-email-templates';
 import { renderBlocksToEmailHtml } from '@/lib/email';
@@ -56,7 +56,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
   // Load branding profile data if found
   if (brandingProfileId) {
     const [profile] = await db.select().from(brandingProfiles)
-      .where(eq(brandingProfiles.id, brandingProfileId)).limit(1);
+      .where(and(eq(brandingProfiles.id, brandingProfileId), eq(brandingProfiles.clientId, site.clientId))).limit(1);
     if (profile) {
       // Get company name from client
       let companyName: string | undefined;
