@@ -28,6 +28,12 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) };
+    return { site: { id: siteId }, client: { id: 1 }, userId: Number(session.user.id), role: 'owner' };
+  },
+  isAuthError: (value: unknown) => Boolean(value && typeof value === 'object' && 'response' in value),
   hasServiceAccess: vi.fn().mockResolvedValue(true),
 }));
 
