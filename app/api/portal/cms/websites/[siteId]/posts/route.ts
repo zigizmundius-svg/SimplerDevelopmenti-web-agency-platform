@@ -95,16 +95,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
   }).returning();
 
   // Save category associations
-  if (categoryIds?.length) {
+  if (taxonomyRefs.categoryIds.length) {
     await db.insert(postCategories).values(
-      categoryIds.map((catId: number) => ({ postId: post.id, categoryId: catId }))
+      taxonomyRefs.categoryIds.map((catId) => ({ postId: post.id, categoryId: catId }))
     );
   }
 
   // Save tag associations
-  if (tagIds?.length) {
+  if (taxonomyRefs.tagIds.length) {
     await db.insert(postTags).values(
-      tagIds.map((tId: number) => ({ postId: post.id, tagId: tId }))
+      taxonomyRefs.tagIds.map((tId) => ({ postId: post.id, tagId: tId }))
     );
   }
 
