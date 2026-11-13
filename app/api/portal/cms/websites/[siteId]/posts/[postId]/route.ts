@@ -185,7 +185,7 @@ export async function PUT(
   // churn join rows even when nothing changed. Diff against the current set
   // and only touch rows that actually moved.
   if (categoryIds !== undefined) {
-    const incoming = new Set<number>((categoryIds as number[]) ?? []);
+    const incoming = new Set<number>(taxonomyRefs.categoryIds);
     const existingRows = await db
       .select({ categoryId: postCategories.categoryId })
       .from(postCategories)
@@ -207,7 +207,7 @@ export async function PUT(
 
   // Same diff strategy for tags.
   if (tagIds !== undefined) {
-    const incoming = new Set<number>((tagIds as number[]) ?? []);
+    const incoming = new Set<number>(taxonomyRefs.tagIds);
     const existingRows = await db
       .select({ tagId: postTags.tagId })
       .from(postTags)
