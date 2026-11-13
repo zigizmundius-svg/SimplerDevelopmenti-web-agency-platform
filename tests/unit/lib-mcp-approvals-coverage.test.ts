@@ -760,8 +760,8 @@ describe('applyPendingChange — site:publish', () => {
   });
 
   it('resolves id from payload.id when entityId is absent', async () => {
-    queueSelect([[{ id: 5, draftCustomCss: null, draftCustomJs: null }]]);
-    queueUpdateReturning([{ id: 5 }]);
+    queueSelect([[{ id: 5, draftCustomCss: '.draft { color: red; }', draftCustomJs: null }]]);
+    queueUpdateReturning([{ id: 5, customCss: '.draft { color: red; }', customJs: '' }]);
     const change = mkChange({
       entityType: 'site',
       operation: 'publish',
@@ -769,7 +769,7 @@ describe('applyPendingChange — site:publish', () => {
       payload: { id: 5 },
     });
     const r = await applyPendingChange(change as never, 10, 1);
-    expect(r).toEqual({ customCss: '', customJs: '' });
+    expect(r).toEqual({ customCss: '.draft { color: red; }', customJs: '' });
   });
 });
 
