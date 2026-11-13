@@ -606,7 +606,7 @@ describe('PUT /api/portal/cms/websites/[siteId]/taxonomies/[taxonomyId]/terms/[t
     authMock.mockResolvedValue(SESSION);
     getPortalClientMock.mockResolvedValue({ id: 42 });
     selectQueue.push([{ id: 99 }]); // site
-    selectQueue.push([{ id: 20, websiteId: 99 }]); // taxonomy
+    selectQueue.push([{ id: 20, websiteId: 99, builtIn: false }]); // taxonomy
     selectQueue.push([
       {
         id: 3,
@@ -618,6 +618,7 @@ describe('PUT /api/portal/cms/websites/[siteId]/taxonomies/[taxonomyId]/terms/[t
         parentId: null,
       },
     ]); // term
+    selectQueue.push([{ id: 7, taxonomyId: 20 }]); // valid parent term
     updateReturnQueue.push([
       {
         id: 3,
@@ -869,7 +870,8 @@ describe('POST /api/portal/cms/websites/[siteId]/taxonomies/[taxonomyId]/terms',
     authMock.mockResolvedValue(SESSION);
     getPortalClientMock.mockResolvedValue({ id: 42 });
     selectQueue.push([{ id: 99 }]); // site
-    selectQueue.push([{ id: 20, websiteId: 99 }]); // taxonomy
+    selectQueue.push([{ id: 20, websiteId: 99, builtIn: false }]); // taxonomy
+    selectQueue.push([{ id: 4, taxonomyId: 20 }]); // valid parent term
     selectQueue.push([]); // no slug conflict
     insertReturnQueue.push([
       {
