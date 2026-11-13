@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { assertBlocksAllowedForRole, BlockGateError } from '@/lib/security/block-allowlist';
 import { auth } from '@/lib/auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
@@ -115,6 +116,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ siteId: 
   const { siteId, typeId } = await params;
   const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
   if (isAuthError(authorization)) return authorization.response;
+  const session = await auth();
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
@@ -128,6 +130,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ siteId: 
   if (template && Array.isArray(template.blocks)) {
     inputBlocks = template.blocks;
     if (template.version) version = template.version;
+  }
+
+  try {
+    assertBlocksAllowedForRole(inputBlocks, (session?.user as { role?: string } | undefined)?.role);
+  } catch (err) {
+    if (err instanceof BlockGateError) {
+      return NextResponse.json({ success: false, message: err.message }, { status: 403 });
+    }
+    throw err;
   }
 
   // Drop all but the first post-content block.
