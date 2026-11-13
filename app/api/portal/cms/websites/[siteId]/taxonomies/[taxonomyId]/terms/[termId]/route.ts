@@ -77,6 +77,9 @@ export async function DELETE(
   const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
   if (isAuthError(authorization)) return authorization.response;
   const access = await verifyTermAccess(siteId, taxonomyId, termId);
+  if (access.taxonomy.websiteId !== access.site.id || access.taxonomy.builtIn) {
+    return NextResponse.json({ success: false, message: 'Global built-in taxonomies are read-only. Create a site-specific taxonomy to customize terms.' }, { status: 403 });
+  }
   if (!access) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
   await db.delete(taxonomyTerms).where(eq(taxonomyTerms.id, access.term.id));
