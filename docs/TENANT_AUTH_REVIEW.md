@@ -143,4 +143,13 @@ The portal and MCP approval surfaces previously had separate custom-code publica
 
 **Change on the adaptation branch:** custom-code publication now locks the site row with `SELECT … FOR UPDATE` inside a database transaction, promotes the locked draft, clears draft metadata in the same transaction, and revalidates the site cache only after commit. The portal endpoint and MCP `site:publish` approval now call the same helper. The helper accepts the owning client ID, and both its read and write predicates include the tenant ID when the caller supplies it.
 
-**Remaining verification:** add a transaction-level regression test for concurrent draft save/publish ordering and run the full unit/integration CI suite. This change has been committed but no green CI result has yet been observed.
+**Verification:** the full CI suite passed on commit `9c33979`, including build, typecheck, unit shards, tenancy regression, and security/critical E2E. A follow-up edge-case hardening and dedicated helper tests were added afterward; those newest commits still require their own CI result.
+
+
+### F-11 — custom-code publish preflight could become stale before the row lock
+
+The portal publish endpoint checked for a draft using the site snapshot returned during authorization, then called the transactional publisher. A second editor could discard or publish that draft between the preflight and the transaction. Without a second check under the row lock, the publisher could promote null/stale draft fields over the live code.
+
+**Change on the adaptation branch:** the shared publisher now selects both draft and live columns under `FOR UPDATE` and revalidates that a real, changed draft still exists before issuing the update. The portal endpoint maps this stale-request condition to HTTP 409 instead of treating it as a successful publish. A dedicated unit test covers the stale/no-draft case, the successful locked promotion, and tenant-scoped not-found behavior.
+
+**Remaining verification:** wait for CI on the latest adaptation-branch commit; do not release until the new test and build pass.
