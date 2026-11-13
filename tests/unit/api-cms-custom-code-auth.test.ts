@@ -19,6 +19,9 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/db/schema', () => ({
   clientWebsites: { id: 'website.id' },
   postTypes: { id: 'postTypes.id' },
+  customFields: { id: 'customFields.id', postTypeId: 'customFields.postTypeId', fieldType: 'customFields.fieldType', order: 'customFields.order' },
+  taxonomies: { id: 'taxonomies.id', websiteId: 'taxonomies.websiteId', builtIn: 'taxonomies.builtIn' },
+  taxonomyTerms: { id: 'taxonomyTerms.id', taxonomyId: 'taxonomyTerms.taxonomyId', sortOrder: 'taxonomyTerms.sortOrder', name: 'taxonomyTerms.name' },
   users: { id: 'users.id', name: 'users.name', email: 'users.email' },
 }));
 vi.mock('@/lib/sites/publish-custom-code', () => ({ discardSiteCustomCodeDraft: vi.fn() }));
