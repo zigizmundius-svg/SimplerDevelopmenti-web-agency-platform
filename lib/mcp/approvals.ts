@@ -434,10 +434,10 @@ export async function applyPendingChange(change: typeof mcpPendingChanges.$infer
         patch.draftUpdatedAt = new Date();
         patch.draftUpdatedBy = applierUserId;
         if (payload.customCss !== undefined) {
-          patch.draftCustomCss = payload.customCss;
+          patch.draftCustomCss = payload.customCss || null;
         }
         if (payload.customJs !== undefined) {
-          patch.draftCustomJs = payload.customJs;
+          patch.draftCustomJs = payload.customJs || null;
         }
       } else {
         for (const field of [
