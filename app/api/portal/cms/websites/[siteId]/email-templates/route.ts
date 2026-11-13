@@ -86,8 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
     if (!profile) {
       return NextResponse.json({ success: false, message: 'Branding profile not found for this website.' }, { status: 400 });
     }
-    {
-      let companyName: string | undefined;
+    let companyName: string | undefined;
       const [siteRow] = await db.select({ clientId: clientWebsites.clientId })
         .from(clientWebsites).where(eq(clientWebsites.id, site.id)).limit(1);
       if (siteRow?.clientId) {
@@ -95,8 +94,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
           .from(clients).where(eq(clients.id, siteRow.clientId)).limit(1);
         companyName = client?.company ?? undefined;
       }
-      emailBranding = brandingProfileToEmailBranding(profile, companyName);
-    }
+    emailBranding = brandingProfileToEmailBranding(profile, companyName);
   }
 
   // Apply branding to blocks
