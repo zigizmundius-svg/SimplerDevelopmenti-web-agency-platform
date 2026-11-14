@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, DM_Sans, Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { defaultSEO } from "@/config/seo";
 import { StructuredData } from "@/components/seo/StructuredData";
@@ -12,44 +11,6 @@ import { AppChromeShell } from "@/components/AppChromeShell";
 // `dynamic()` declared in this server file: that makes them client references
 // of the root layout, whose chunks then ship on every route including public
 // tenant sites (PUX-241: 76 KB raw). See components/AppChromeShell.tsx.
-
-// preload: false — these app/portal fonts were being <link rel=preload>ed on
-// EVERY route (~180KB of woff2), including public client sites that use their
-// own brand fonts (Raleway/Open Sans) and never reference these. With preload
-// off they still load on-demand where actually used (var(--font-*)), but no
-// longer sit on the critical path of pages that don't use them.
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  preload: false,
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  preload: false,
-});
-
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  preload: false,
-});
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  preload: false,
-});
-
-const playfairDisplay = Playfair_Display({
-  variable: "--font-playfair",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  preload: false,
-});
 
 // ─── Retro-future marketing type ────────────────────────────────────────────
 // Orbitron/Raleway (the retro-future marketing pair) now live in
@@ -100,9 +61,6 @@ export default async function RootLayout({
   // (geistMono is deliberately NOT gated — app/sites/**/checkout uses the
   // `font-mono` utility, which resolves through --font-mono to
   // var(--font-geist-mono), so client sites still need it.)
-  const appShellFontVariables = isClientSite
-    ? ""
-    : `${geistSans.variable} ${dmSans.variable} ${inter.variable} ${playfairDisplay.variable}`;
   return (
     // Client sites are pinned light at the ROOT: the class both keeps the
     // token media block (`:root:not(.light)`) from firing and, with the
@@ -172,7 +130,7 @@ gtag('config', '${gaId}');`,
         )}
       </head>
       <body
-        className={`${geistMono.variable} ${appShellFontVariables} antialiased min-h-screen flex flex-col`}
+        className="antialiased min-h-screen flex flex-col"
       >
         {isClientSite ? (
           // Public client sites supply their own nav/footer (app/sites/[domain]
