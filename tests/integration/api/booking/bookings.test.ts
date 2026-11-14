@@ -165,6 +165,44 @@ describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => 
     return date.toISOString();
   }
 
+  it('prevents a public visitor and portal operator from claiming the same slot concurrently', async () => {
+    const page = await seedPage(A);
+    const startTime = nextAvailableWeekday();
+    mockedAuth.mockResolvedValue(A.session);
+    const portalRoute = await import('@/app/api/portal/tools/booking/[id]/bookings/route');
+    const publicRoute = await import('@/app/api/public/booking/[slug]/book/route');
+
+    const [portalResult, publicResult] = await Promise.all([
+      callHandler(
+        portalRoute as unknown as Record<string, unknown>, 'POST',
+        { params: { id: String(page.id) }, body: {
+          guestName: 'Portal Guest', guestEmail: 'portal-race@example.test', startTime,
+        } },
+      ),
+      callHandler(
+        publicRoute as unknown as Record<string, unknown>, 'POST',
+        { params: { slug: page.slug }, body: {
+          name: 'Public Guest', email: 'public-race@example.test', startTime,
+        } },
+      ),
+    ]);
+
+    const results = [portalResult, publicResult];
+    expect(results.filter((result) => result.status === 409)).toHaveLength(1);
+    expect(results.filter((result) => result.status === 200 || result.status === 201)).toHaveLength(1);
+
+    const sql = getTestSql();
+    const rows = await sql<{ id: number; guest_name: string; status: string }[]>\`
+      SELECT id, guest_name, status
+      FROM \${sql(TEST_SCHEMA)}.bookings
+      WHERE booking_page_id = \${page.id}
+        AND start_time = \${new Date(startTime)}
+        AND status <> 'cancelled'
+    \`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('confirmed');
+  });
+
   it('creates a manual booking using the shared slot validator', async () => {
     const page = await seedPage(A);
     mockedAuth.mockResolvedValue(A.session);
