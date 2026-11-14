@@ -47,7 +47,7 @@ async function enableBookingService(ctx: TenantCtx): Promise<void> {
   `;
 }
 
-async function seedPage(ctx: TenantCtx, opts: { price?: number } = {}): Promise<{ id: number }> {
+async function seedPage(ctx: TenantCtx, opts: { price?: number } = {}): Promise<{ id: number; slug: string }> {
   const sql = getTestSql();
   const slug = `pg-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   const [row] = await sql<{ id: number }[]>`
@@ -62,7 +62,7 @@ async function seedPage(ctx: TenantCtx, opts: { price?: number } = {}): Promise<
       false, false, false, false, false, 0, 15, 'none', false, '#2563eb'
     ) RETURNING id
   `;
-  return row;
+  return { ...row, slug };
 }
 
 async function seedBooking(opts: {
@@ -225,6 +225,38 @@ describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => 
     expect(listRes.data?.data.some((booking) => booking.guestName === 'Manual Guest')).toBe(true);
   });
 
+  it('blocks a manual booking when the same slot was already booked publicly', async () => {
+    const page = await seedPage(A);
+    const startTime = nextAvailableWeekday();
+    const publicRoute = await import('@/app/api/public/booking/[slug]/book/route');
+    const publicResult = await callHandler(
+      publicRoute as unknown as Record<string, unknown>, 'POST',
+      { params: { slug: page.slug }, body: {
+        name: 'Website Guest', email: 'website@example.test', startTime,
+      } },
+    );
+    expect(publicResult.status).toBe(200);
+
+    mockedAuth.mockResolvedValue(A.session);
+    const portalRoute = await import('@/app/api/portal/tools/booking/[id]/bookings/route');
+    const manualResult = await callHandler(
+      portalRoute as unknown as Record<string, unknown>, 'POST',
+      { params: { id: String(page.id) }, body: {
+        guestName: 'Manual Guest', guestEmail: 'manual@example.test', startTime,
+      } },
+    );
+    expect(manualResult.status).toBe(409);
+
+    const sql = getTestSql();
+    const rows = await sql<{ id: number; guest_name: string }[]>`
+      SELECT id, guest_name
+      FROM ${sql(TEST_SCHEMA)}.bookings
+      WHERE booking_page_id = ${page.id} AND start_time = ${new Date(startTime)}
+        AND status <> 'cancelled'
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].guest_name).toBe('Website Guest');
+  });
   it('serializes simultaneous manual bookings for the same slot', async () => {
     const page = await seedPage(A);
     mockedAuth.mockResolvedValue(A.session);
