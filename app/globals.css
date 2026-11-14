@@ -52,6 +52,11 @@
 }
 
 :root {
+  --font-geist-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-inter: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-dm-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-playfair: Georgia, "Times New Roman", serif;
   /* Neutral secondary surface for the button `secondary` variant — VEQA-039. */
   --secondary: #e7e5e4;
   --secondary-foreground: #292524;
@@ -215,11 +220,11 @@
   --color-accent-secondary: var(--accent-secondary);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-inter);
-  --font-display: var(--font-dm-sans);
-  --font-playfair: var(--font-playfair);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-playfair: Georgia, "Times New Roman", serif;
 }
 
 body {
