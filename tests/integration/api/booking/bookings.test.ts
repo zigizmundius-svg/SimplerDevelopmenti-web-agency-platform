@@ -98,7 +98,7 @@ async function seedBooking(opts: {
   return row;
 }
 
-describe('GET /api/portal/tools/booking/[id]/bookings @booking @portal', () => {
+describe('GET /api/portal/tools/booking/[id]/bookings @booking @portal @tenancy', () => {
   let A: TenantCtx;
   let B: TenantCtx;
   beforeEach(async () => {
@@ -147,7 +147,7 @@ describe('GET /api/portal/tools/booking/[id]/bookings @booking @portal', () => {
   });
 });
 
-describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal', () => {
+describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal @tenancy', () => {
   let A: TenantCtx;
   let B: TenantCtx;
   beforeEach(async () => {
