@@ -14,6 +14,7 @@ export * from './catalog';
 export * from './email';
 export * from './surveys';
 export * from './tools';
+export * from './mcp';
 export * from './billing';
 export * from './approvals';
 export * from './devices';

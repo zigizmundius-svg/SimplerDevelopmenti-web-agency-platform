@@ -14,6 +14,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const authorizePortalSiteMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args),
+  isAuthError: (result: unknown) => Boolean(result && typeof result === 'object' && 'response' in result),
+}));
+
+
 // ---------------------------------------------------------------------------
 // Hoisted mocks — declared before any route is imported.
 // ---------------------------------------------------------------------------
@@ -217,6 +224,12 @@ function makeReq(url: string, init?: RequestInit): Request {
 const SESSION = { user: { id: '7' } };
 
 beforeEach(() => {
+  authorizePortalSiteMock.mockResolvedValue({
+    site: { id: 10, clientId: 1 },
+    client: { id: 1 },
+    userId: 7,
+    role: 'admin',
+  });
   selectQueue = [];
   insertReturnQueue = [];
   updateReturnQueue = [];
@@ -593,7 +606,7 @@ describe('PUT /api/portal/cms/websites/[siteId]/taxonomies/[taxonomyId]/terms/[t
     authMock.mockResolvedValue(SESSION);
     getPortalClientMock.mockResolvedValue({ id: 42 });
     selectQueue.push([{ id: 99 }]); // site
-    selectQueue.push([{ id: 20, websiteId: 99 }]); // taxonomy
+    selectQueue.push([{ id: 20, websiteId: 99, builtIn: false }]); // taxonomy
     selectQueue.push([
       {
         id: 3,
@@ -605,6 +618,7 @@ describe('PUT /api/portal/cms/websites/[siteId]/taxonomies/[taxonomyId]/terms/[t
         parentId: null,
       },
     ]); // term
+    selectQueue.push([{ id: 7, taxonomyId: 20 }]); // valid parent term
     updateReturnQueue.push([
       {
         id: 3,
@@ -856,7 +870,8 @@ describe('POST /api/portal/cms/websites/[siteId]/taxonomies/[taxonomyId]/terms',
     authMock.mockResolvedValue(SESSION);
     getPortalClientMock.mockResolvedValue({ id: 42 });
     selectQueue.push([{ id: 99 }]); // site
-    selectQueue.push([{ id: 20, websiteId: 99 }]); // taxonomy
+    selectQueue.push([{ id: 20, websiteId: 99, builtIn: false }]); // taxonomy
+    selectQueue.push([{ id: 4, taxonomyId: 20 }]); // valid parent term
     selectQueue.push([]); // no slug conflict
     insertReturnQueue.push([
       {

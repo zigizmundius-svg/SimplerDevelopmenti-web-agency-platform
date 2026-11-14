@@ -331,7 +331,7 @@ describe('/api/cron/brain-daily-notes', () => {
     expect(res.status).toBe(401);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
+  it('rejects forged the Vercel cron header without bearer token', async () => {
     process.env.CRON_SECRET = 'shh';
     selectQueue.push([]); // no templates
     const res = await brainDailyNotesRoute.GET(
@@ -339,15 +339,7 @@ describe('/api/cron/brain-daily-notes', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.examined).toBe(0);
-    expect(body.created).toBe(0);
-    expect(body.skipped).toBe(0);
-    expect(body.failed).toBe(0);
-    expect(typeof body.date).toBe('string');
-    expect(body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -378,7 +370,7 @@ describe('/api/cron/brain-daily-notes', () => {
     getNoteBySourceUrl.mockResolvedValue({ id: 555 });
     const res = await brainDailyNotesRoute.GET(
       makeReq('http://x/api/cron/brain-daily-notes', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -409,7 +401,7 @@ describe('/api/cron/brain-daily-notes', () => {
 
     const res = await brainDailyNotesRoute.GET(
       makeReq('http://x/api/cron/brain-daily-notes', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -456,7 +448,7 @@ describe('/api/cron/brain-daily-notes', () => {
 
     const res = await brainDailyNotesRoute.GET(
       makeReq('http://x/api/cron/brain-daily-notes', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -502,7 +494,7 @@ describe('/api/cron/brain-daily-notes', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await brainDailyNotesRoute.GET(
       makeReq('http://x/api/cron/brain-daily-notes', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     errSpy.mockRestore();
@@ -538,7 +530,7 @@ describe('/api/cron/brain-daily-notes', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await brainDailyNotesRoute.GET(
       makeReq('http://x/api/cron/brain-daily-notes', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     errSpy.mockRestore();
@@ -580,7 +572,7 @@ describe('/api/cron/resend-usage-sync', () => {
     expect(res.status).toBe(401);
   });
 
-  it('passes auth gate with Vercel cron header when CRON_SECRET is not configured', async () => {
+  it('rejects forged with Vercel cron header when CRON_SECRET is not configured', async () => {
     delete process.env.CRON_SECRET;
     selectQueue.push([]); // no rows
     const res = await resendUsageSyncRoute.GET(
@@ -588,10 +580,10 @@ describe('/api/cron/resend-usage-sync', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
-  it('accepts the Vercel cron header without bearer', async () => {
+  it('rejects forged the Vercel cron header without bearer', async () => {
     process.env.CRON_SECRET = 'shh';
     selectQueue.push([]); // grouped query returns empty
     const res = await resendUsageSyncRoute.GET(
@@ -599,14 +591,7 @@ describe('/api/cron/resend-usage-sync', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.mode).toBe('stub-local-count');
-    expect(body.data.clientsSynced).toBe(0);
-    expect(body.data.upserted).toBe(0);
-    expect(typeof body.data.durationMs).toBe('number');
-    expect(body.data.period).toMatch(/^\d{4}-\d{2}$/);
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -621,7 +606,7 @@ describe('/api/cron/resend-usage-sync', () => {
   });
 
   it('inserts a new usage_meter_events row when none exists for the period', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     // Grouped select: one client with 42 sends
     selectQueue.push([{ clientId: 5, sendCount: 42 }]);
     // Existing lookup → empty (no row yet)
@@ -631,7 +616,7 @@ describe('/api/cron/resend-usage-sync', () => {
 
     const res = await resendUsageSyncRoute.GET(
       makeReq('http://x/api/cron/resend-usage-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -649,14 +634,14 @@ describe('/api/cron/resend-usage-sync', () => {
   });
 
   it('updates the existing row when one already exists for the period', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([{ clientId: 8, sendCount: 100 }]);
     selectQueue.push([{ id: 777 }]); // existing usage_meter_events row
     updateQueue.push([{ id: 777 }]);
 
     const res = await resendUsageSyncRoute.GET(
       makeReq('http://x/api/cron/resend-usage-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -668,7 +653,7 @@ describe('/api/cron/resend-usage-sync', () => {
   });
 
   it('skips rows where clientId is null', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       { clientId: null, sendCount: 50 },
       { clientId: 9, sendCount: 25 },
@@ -679,7 +664,7 @@ describe('/api/cron/resend-usage-sync', () => {
 
     const res = await resendUsageSyncRoute.GET(
       makeReq('http://x/api/cron/resend-usage-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -691,7 +676,7 @@ describe('/api/cron/resend-usage-sync', () => {
   });
 
   it('handles multiple non-null clients (mixed insert + update)', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       { clientId: 1, sendCount: 10 },
       { clientId: 2, sendCount: 20 },
@@ -703,7 +688,7 @@ describe('/api/cron/resend-usage-sync', () => {
 
     const res = await resendUsageSyncRoute.GET(
       makeReq('http://x/api/cron/resend-usage-sync', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

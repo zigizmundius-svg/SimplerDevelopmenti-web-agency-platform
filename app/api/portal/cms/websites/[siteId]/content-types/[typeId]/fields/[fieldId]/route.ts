@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientWebsites, postTypes, customFields } from '@/lib/db/schema';
@@ -47,6 +48,8 @@ async function verifyFieldAccess(siteIdRaw: string, typeIdRaw: string, fieldIdRa
 
 export async function PUT(req: Request, { params }: { params: Promise<{ siteId: string; typeId: string; fieldId: string }> }) {
   const { siteId, typeId, fieldId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyFieldAccess(siteId, typeId, fieldId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
@@ -98,6 +101,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ siteId: 
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ siteId: string; typeId: string; fieldId: string }> }) {
   const { siteId, typeId, fieldId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyFieldAccess(siteId, typeId, fieldId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 

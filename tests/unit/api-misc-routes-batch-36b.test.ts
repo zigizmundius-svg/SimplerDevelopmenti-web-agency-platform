@@ -30,6 +30,9 @@ vi.mock('@/lib/portal-client', () => ({
 
 const authorizePortalMock = vi.fn();
 vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => ({
+    site: { id: siteId, clientId: 1 }, client: { id: 1 }, userId: 7, role: 'admin',
+  }),
   authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
   isAuthError: (r: unknown) =>
     Boolean(r && typeof r === 'object' && 'response' in (r as Record<string, unknown>)),

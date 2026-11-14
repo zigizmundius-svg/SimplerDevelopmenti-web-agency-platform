@@ -8,6 +8,27 @@
       "when": 1782409384204,
       "tag": "0000_baseline_2026_06_25",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794211920890,
+      "tag": "0001_internal_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794215520000,
+      "tag": "0002_booking_audit_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794312000000,
+      "tag": "0003_booking_reminder_claim",
+      "breakpoints": true
     }
   ]
 }

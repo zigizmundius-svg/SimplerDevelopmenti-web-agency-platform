@@ -107,6 +107,7 @@ import { revoke as revokeGoogleToken } from '@/lib/google/oauth';
 import { getTenantWorkspaceCredentialsByClientId } from '@/lib/google/tenant-credentials';
 import { stageOrApply } from '../pending-changes';
 import { BLOCKS_SCHEMA_REFERENCE } from '../blocks-schema';
+import { registerBookingMutationTools } from './booking-mutations';
 import { createApprovalLink, approvalEnvelope } from '../approval-links';
 import {
   json,
@@ -128,6 +129,7 @@ import {
 
 export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext): void {
   const clientId = ctx.client.id;
+  registerBookingMutationTools(server, ctx);
 
   // ── BOOKINGS / APPOINTMENTS ────────────────────────────────────────────
   // Keywords: booking, appointment, calendar, schedule, meeting, reservation.
@@ -412,80 +414,6 @@ export function registerBookingsTools(server: McpServer, ctx: PortalMcpContext):
       return json(row);
     }
   );
-
-  hasScope(ctx.scopes, 'bookings:write') && server.registerTool(
-    'bookings_cancel',
-    {
-      title: 'Cancel booking / appointment',
-      description:
-        'Cancel a booking. Marks status=cancelled and stamps cancelledAt. This does NOT auto-refund payment or remove Google Calendar events — handle those in the UI or via separate tools when they exist.',
-      inputSchema: {
-        id: z.number(),
-        reason: z.string().optional().describe('Internal note appended to booking.notes.'),
-      },
-    },
-    async ({ id, reason }) => {
-      if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
-      if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
-      const [existing] = await db.select().from(bookings)
-        .where(and(eq(bookings.id, id), eq(bookings.clientId, clientId))).limit(1);
-      if (!existing) return json({ error: 'Booking not found' });
-      if (existing.status === 'cancelled') return json({ error: 'Booking already cancelled' });
-      const patch: Record<string, unknown> = {
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        updatedAt: new Date(),
-      };
-      if (reason) {
-        const prior = existing.notes?.trim();
-        patch.notes = prior ? `${prior}\n[cancelled] ${reason}` : `[cancelled] ${reason}`;
-      }
-      const [row] = await db.update(bookings).set(patch)
-        .where(eq(bookings.id, id)).returning();
-      revalidateForWrite('portal');
-      return json(row);
-    }
-  );
-
-  hasScope(ctx.scopes, 'bookings:write') && server.registerTool(
-    'bookings_update',
-    {
-      title: 'Update booking',
-      description:
-        'Edit booking fields (times, status, notes, assignee, check-in). Time changes DO NOT automatically push to Google Calendar or notify the guest.',
-      inputSchema: {
-        id: z.number(),
-        startTime: z.string().optional().describe('ISO datetime.'),
-        endTime: z.string().optional().describe('ISO datetime.'),
-        status: z.enum(['confirmed', 'cancelled', 'completed', 'no_show']).optional(),
-        notes: z.string().nullable().optional(),
-        assignedTo: z.number().nullable().optional(),
-        guestName: z.string().min(1).optional(),
-        guestEmail: z.string().email().optional(),
-        guestPhone: z.string().nullable().optional(),
-      },
-    },
-    async ({ id, startTime, endTime, ...rest }) => {
-      if (!requireScope(ctx, 'bookings:write')) return denied('bookings:write');
-      if (!(await requireService(clientId, 'booking'))) return serviceDenied('booking');
-      const [existing] = await db.select({ id: bookings.id, status: bookings.status })
-        .from(bookings)
-        .where(and(eq(bookings.id, id), eq(bookings.clientId, clientId))).limit(1);
-      if (!existing) return json({ error: 'Booking not found' });
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
-      for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
-      if (startTime !== undefined) patch.startTime = new Date(startTime);
-      if (endTime !== undefined) patch.endTime = new Date(endTime);
-      if (rest.status === 'cancelled' && existing.status !== 'cancelled') {
-        patch.cancelledAt = new Date();
-      }
-      const [row] = await db.update(bookings).set(patch)
-        .where(eq(bookings.id, id)).returning();
-      revalidateForWrite('portal');
-      return json(row);
-    }
-  );
-
 
   // ── GIFT CERTIFICATES ──────────────────────────────────────────────────
   hasScope(ctx.scopes, 'bookings:read') && server.registerTool(

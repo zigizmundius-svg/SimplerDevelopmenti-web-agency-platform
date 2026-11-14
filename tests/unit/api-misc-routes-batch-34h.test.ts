@@ -62,6 +62,12 @@ vi.mock('@/lib/db/schema', () => {
   }, { has: (t, p) => (p in t) || !(p === "then" || p === "__esModule" || p === "default" || typeof p !== "string"), get: (t, p) => (p in t) ? t[p] : ((p === "then" || p === "__esModule" || p === "default" || typeof p !== "string") ? undefined : wrap(p)) });
 });
 
+// Shared booking mutation service
+const cancelBookingRecordMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/booking/service', () => ({
+  cancelBookingRecord: (...args: unknown[]) => cancelBookingRecordMock(...args),
+}));
+
 // Booking emails
 const sendCancellationEmailMock = vi.fn();
 vi.mock('@/lib/email/booking-emails', () => ({
@@ -249,6 +255,7 @@ beforeEach(() => {
   insertReturnQueue = [];
   insertCalls.length = 0;
   updateCalls.length = 0;
+  cancelBookingRecordMock.mockReset();
   sendCancellationEmailMock.mockReset();
   deleteCalendarEventMock.mockReset();
   deleteZoomMeetingMock.mockReset();
@@ -279,7 +286,7 @@ describe('POST /api/public/booking/cancel', () => {
   });
 
   it('returns 404 when booking not found', async () => {
-    selectQueue.push([]); // booking lookup empty
+    cancelBookingRecordMock.mockRejectedValueOnce(Object.assign(new Error('Booking not found'), { status: 404 }));
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'abc' }),
     );
@@ -288,14 +295,9 @@ describe('POST /api/public/booking/cancel', () => {
   });
 
   it('returns 409 when booking already cancelled', async () => {
-    selectQueue.push([
-      {
-        id: 1,
-        status: 'cancelled',
-        startTime: new Date(Date.now() + 60_000),
-        cancelToken: 'abc',
-      },
-    ]);
+    cancelBookingRecordMock.mockRejectedValueOnce(Object.assign(
+      new Error('This booking has already been cancelled'), { status: 409 },
+    ));
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'abc' }),
     );
@@ -304,14 +306,9 @@ describe('POST /api/public/booking/cancel', () => {
   });
 
   it('returns 400 when booking is in the past', async () => {
-    selectQueue.push([
-      {
-        id: 1,
-        status: 'confirmed',
-        startTime: new Date(Date.now() - 60_000), // past
-        cancelToken: 'abc',
-      },
-    ]);
+    cancelBookingRecordMock.mockRejectedValueOnce(Object.assign(
+      new Error('Cannot cancel a past booking'), { status: 400 },
+    ));
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'abc' }),
     );
@@ -321,24 +318,20 @@ describe('POST /api/public/booking/cancel', () => {
 
   it('cancels future booking with page and host: sends emails, deletes calendar + zoom', async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000);
-    selectQueue.push([
-      {
-        id: 1,
-        bookingPageId: 10,
-        clientId: 5,
-        status: 'confirmed',
-        startTime: future,
-        timezone: 'America/New_York',
-        guestEmail: 'g@example.com',
-        guestName: 'Guest Name',
-        googleEventId: 'evt_1',
-        meetingLink: 'https://zoom.us/j/123',
-        cancelToken: 'tok',
-      },
-    ]); // booking
+    cancelBookingRecordMock.mockResolvedValueOnce({
+      id: 1,
+      bookingPageId: 10,
+      clientId: 5,
+      status: 'cancelled',
+      startTime: future,
+      timezone: 'America/New_York',
+      guestEmail: 'g@example.com',
+      guestName: 'Guest Name',
+      googleEventId: 'evt_1',
+      meetingLink: 'https://zoom.us/j/123',
+      cancelToken: 'tok',
+    });
     selectQueue.push([{ id: 10, title: 'Demo Call', slug: 'demo' }]); // page
-    selectQueue.push([{ userId: 99 }]); // client
-    selectQueue.push([{ email: 'host@example.com' }]); // host
 
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'tok' }),
@@ -348,49 +341,29 @@ describe('POST /api/public/booking/cancel', () => {
     expect(body.success).toBe(true);
     expect(body.data.message).toBe('Booking cancelled successfully');
 
-    // Update set status=cancelled
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].table).toBe('bookings');
-    expect(updateCalls[0].patch.status).toBe('cancelled');
-    expect(updateCalls[0].patch.cancelledAt).toBeInstanceOf(Date);
+    expect(cancelBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      token: 'tok',
+      rejectPast: true,
+      actor: expect.objectContaining({ actorType: 'guest', source: 'public' }),
+    }));
+    expect(updateCalls).toHaveLength(0);
 
     // Async side effects — give microtasks a tick to flush
     await new Promise((r) => setTimeout(r, 0));
 
     expect(deleteCalendarEventMock).toHaveBeenCalledWith(5, 'evt_1');
     expect(deleteZoomMeetingMock).toHaveBeenCalledWith(5, 'https://zoom.us/j/123');
-    expect(sendCancellationEmailMock).toHaveBeenCalledWith(
-      'g@example.com',
-      'Guest Name',
-      'Demo Call',
-      future,
-      'America/New_York',
-      'demo',
-      null, // brand — loadBookingBrand mock returns null
-    );
-    expect(resendSendMock).toHaveBeenCalledTimes(1);
-    const sendArgs = resendSendMock.mock.calls[0][0] as Record<string, unknown>;
-    expect(sendArgs.to).toBe('host@example.com');
-    expect(String(sendArgs.subject)).toMatch(/Booking Cancelled.*Guest Name.*Demo Call/);
+    expect(sendCancellationEmailMock).not.toHaveBeenCalled();
+    expect(resendSendMock).not.toHaveBeenCalled();
   });
 
   it('skips calendar delete when no googleEventId', async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000);
-    selectQueue.push([
-      {
-        id: 1,
-        bookingPageId: 10,
-        clientId: 5,
-        status: 'confirmed',
-        startTime: future,
-        timezone: 'UTC',
-        guestEmail: 'g@example.com',
-        guestName: 'G',
-        googleEventId: null,
-        meetingLink: null,
-        cancelToken: 'tok',
-      },
-    ]);
+    cancelBookingRecordMock.mockResolvedValueOnce({
+      id: 1, bookingPageId: 10, clientId: 5, status: 'cancelled',
+      startTime: future, timezone: 'UTC', guestEmail: 'g@example.com',
+      guestName: 'G', googleEventId: null, meetingLink: null, cancelToken: 'tok',
+    });
     selectQueue.push([]); // no page
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'tok' }),
@@ -404,61 +377,38 @@ describe('POST /api/public/booking/cancel', () => {
 
   it('skips zoom delete when meetingLink is non-zoom', async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000);
-    selectQueue.push([
-      {
-        id: 1,
-        bookingPageId: 10,
-        clientId: 5,
-        status: 'confirmed',
-        startTime: future,
-        timezone: 'UTC',
-        guestEmail: 'g@example.com',
-        guestName: 'G',
-        googleEventId: null,
-        meetingLink: 'https://meet.google.com/abc-defg-hij',
-        cancelToken: 'tok',
-      },
-    ]);
+    cancelBookingRecordMock.mockResolvedValueOnce({
+      id: 1, bookingPageId: 10, clientId: 5, status: 'cancelled',
+      startTime: future, timezone: 'UTC', guestEmail: 'g@example.com',
+      guestName: 'G', googleEventId: null,
+      meetingLink: 'https://meet.google.com/abc-defg-hij', cancelToken: 'tok',
+    });
     selectQueue.push([{ id: 10, title: 'T', slug: 's' }]);
-    selectQueue.push([]); // client lookup empty -> no host email
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'tok' }),
     );
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 0));
     expect(deleteZoomMeetingMock).not.toHaveBeenCalled();
-    // Guest email still sent
-    expect(sendCancellationEmailMock).toHaveBeenCalled();
-    // No host notify
+    // Cancellation emails are queued in the booking transaction, not sent inline.
+    expect(sendCancellationEmailMock).not.toHaveBeenCalled();
     expect(resendSendMock).not.toHaveBeenCalled();
   });
 
-  it('handles missing host: skips host notification', async () => {
+  it('does not send cancellation emails inline; delivery is queued transactionally', async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000);
-    selectQueue.push([
-      {
-        id: 1,
-        bookingPageId: 10,
-        clientId: 5,
-        status: 'confirmed',
-        startTime: future,
-        timezone: 'UTC',
-        guestEmail: 'g@example.com',
-        guestName: 'G',
-        googleEventId: null,
-        meetingLink: null,
-        cancelToken: 'tok',
-      },
-    ]);
+    cancelBookingRecordMock.mockResolvedValueOnce({
+      id: 1, bookingPageId: 10, clientId: 5, status: 'cancelled',
+      startTime: future, timezone: 'UTC', guestEmail: 'g@example.com',
+      guestName: 'G', googleEventId: null, meetingLink: null, cancelToken: 'tok',
+    });
     selectQueue.push([{ id: 10, title: 'T', slug: 's' }]);
-    selectQueue.push([{ userId: 99 }]);
-    selectQueue.push([]); // host lookup empty
     const res = await cancelRoute.POST(
       makeJsonReq('http://x/cancel', 'POST', { token: 'tok' }),
     );
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 0));
-    expect(sendCancellationEmailMock).toHaveBeenCalled();
+    expect(sendCancellationEmailMock).not.toHaveBeenCalled();
     expect(resendSendMock).not.toHaveBeenCalled();
   });
 });

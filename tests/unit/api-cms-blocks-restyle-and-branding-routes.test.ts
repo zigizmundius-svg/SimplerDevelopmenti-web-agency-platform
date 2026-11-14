@@ -27,9 +27,21 @@ vi.mock('@/lib/auth', () => ({
 
 const resolveClientSiteMock = vi.fn();
 const getPortalClientMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
+}));
+
+const authorizePortalSiteMock = vi.fn(async ({ siteId }: { siteId: number }) => ({
+  site: { id: siteId, clientId: 10 },
+  client: { id: 10 },
+  userId: 7,
+  role: 'owner',
+}));
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args as [{ siteId: number }]),
 }));
 
 const getBrandingByWebsiteIdMock = vi.fn();
@@ -286,6 +298,9 @@ beforeEach(() => {
   state._idCounter = 1000;
 
   authMock.mockReset();
+  authorizePortalSiteMock.mockReset().mockImplementation(async ({ siteId }: { siteId: number }) => ({
+    site: { id: siteId, clientId: 10 }, client: { id: 10 }, userId: 7, role: 'owner',
+  }));
   resolveClientSiteMock.mockReset();
   getPortalClientMock.mockReset();
   getBrandingByWebsiteIdMock.mockReset();
@@ -555,7 +570,7 @@ describe('GET /api/portal/websites/[siteId]/branding', () => {
   });
 
   it('returns 401 when there is no session', async () => {
-    authMock.mockResolvedValueOnce(null);
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) } as never);
     const res = await brandingMod.GET(makeBareReq(url), makeParams('1'));
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -563,18 +578,20 @@ describe('GET /api/portal/websites/[siteId]/branding', () => {
   });
 
   it('returns 401 when user has no id', async () => {
-    authMock.mockResolvedValueOnce({ user: {} });
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) } as never);
     const res = await brandingMod.GET(makeBareReq(url), makeParams('1'));
     expect(res.status).toBe(401);
   });
 
   it('returns 401 when getPortalClient returns null', async () => {
-    getPortalClientMock.mockResolvedValueOnce(null);
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) } as never);
     const res = await brandingMod.GET(makeBareReq(url), makeParams('1'));
     expect(res.status).toBe(401);
   });
 
   it('returns 401 when the site does not belong to the user', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) } as never);
+    resolveClientSiteMock.mockResolvedValueOnce(null);
     state.clientWebsites.length = 0;
     state.clientWebsites.push({ id: 1, clientId: 999, brandingProfileId: null });
     const res = await brandingMod.GET(makeBareReq(url), makeParams('1'));
@@ -625,7 +642,7 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
   });
 
   it('returns 401 when there is no session', async () => {
-    authMock.mockResolvedValueOnce(null);
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) } as never);
     const res = await brandingMod.PUT(
       makeJsonReq(url, { primaryColor: '#000' }, 'PUT'),
       makeParams('1'),
@@ -634,6 +651,8 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
   });
 
   it('returns 401 when the site does not belong to the user', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), { status: 401 }) } as never);
+    resolveClientSiteMock.mockResolvedValueOnce(null);
     state.clientWebsites.length = 0;
     state.clientWebsites.push({ id: 1, clientId: 999, brandingProfileId: null });
     const res = await brandingMod.PUT(
@@ -711,6 +730,7 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
     state.clientWebsites.push({ id: 1, clientId: 10, brandingProfileId: 77 });
     state.brandingProfiles.push({
       id: 77,
+      clientId: 10,
       primaryColor: '#oldprof',
       logoUrl: 'old.png',
       navTemplate: 'old-tmpl',
@@ -747,6 +767,7 @@ describe('PUT /api/portal/websites/[siteId]/branding', () => {
     state.clientWebsites.push({ id: 1, clientId: 10, brandingProfileId: 88 });
     state.brandingProfiles.push({
       id: 88,
+      clientId: 10,
       logoUrl: 'previous.png',
       logoAlt: 'prev',
     });

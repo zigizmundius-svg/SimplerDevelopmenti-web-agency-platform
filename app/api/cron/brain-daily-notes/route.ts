@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
  * for now (everything in UTC); per-tenant tz support can layer on later
  * without changing the dedupe key as long as we keep YYYY-MM-DD in tenant tz.
  *
- * Auth: Vercel cron header OR `Authorization: Bearer ${CRON_SECRET}`.
+ * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  *
  * Suggested schedule: 6:05 UTC daily (`5 6 * * *`).
  */
@@ -64,7 +64,7 @@ async function _GET(req: Request) {
   for (const tpl of templates) {
     const sourceUrl = `daily://${tpl.id}/${dateKey}`;
     try {
-      // Per-tenant entitlement gate — this cron is unauthenticated (Vercel
+      // Cron authentication is Bearer-only via lib/cron-auth.ts.
       // cron header / shared secret) so we cannot use the request-scoped
       // `requireBrainEntitlement`. Defense-in-depth: if a tenant churned but
       // still has `enabled=true` daily templates lying around, do not write

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { validatePostTaxonomyRefs } from '@/lib/sites/validate-post-taxonomy-refs';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { posts, postCategories, postTags } from '@/lib/db/schema';
@@ -12,6 +14,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const parsed = parseSiteIdParam(siteId);
   if (!parsed.ok) return parsed.response;
 
@@ -32,6 +36,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const parsed = parseSiteIdParam(siteId);
   if (!parsed.ok) return parsed.response;
 
@@ -40,6 +46,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
 
   const body = await req.json();
   const { title, slug, postType, excerpt, content, coverImage, published, categoryIds, tagIds, seoTitle, seoDescription, ogImage, noIndex, canonicalUrl } = body;
+
+  const taxonomyRefs = await validatePostTaxonomyRefs(site.id, categoryIds, tagIds);
+  if (!taxonomyRefs.valid) {
+    return NextResponse.json({ success: false, message: taxonomyRefs.message }, { status: 400 });
+  }
 
   if (!title || !slug || !content) {
     return NextResponse.json({ success: false, message: 'title, slug, and content are required' }, { status: 400 });
@@ -84,16 +95,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
   }).returning();
 
   // Save category associations
-  if (categoryIds?.length) {
+  if (taxonomyRefs.categoryIds.length) {
     await db.insert(postCategories).values(
-      categoryIds.map((catId: number) => ({ postId: post.id, categoryId: catId }))
+      taxonomyRefs.categoryIds.map((catId) => ({ postId: post.id, categoryId: catId }))
     );
   }
 
   // Save tag associations
-  if (tagIds?.length) {
+  if (taxonomyRefs.tagIds.length) {
     await db.insert(postTags).values(
-      tagIds.map((tId: number) => ({ postId: post.id, tagId: tId }))
+      taxonomyRefs.tagIds.map((tId) => ({ postId: post.id, tagId: tId }))
     );
   }
 

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, DM_Sans, Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { defaultSEO } from "@/config/seo";
 import { StructuredData } from "@/components/seo/StructuredData";
@@ -12,44 +11,6 @@ import { AppChromeShell } from "@/components/AppChromeShell";
 // `dynamic()` declared in this server file: that makes them client references
 // of the root layout, whose chunks then ship on every route including public
 // tenant sites (PUX-241: 76 KB raw). See components/AppChromeShell.tsx.
-
-// preload: false — these app/portal fonts were being <link rel=preload>ed on
-// EVERY route (~180KB of woff2), including public client sites that use their
-// own brand fonts (Raleway/Open Sans) and never reference these. With preload
-// off they still load on-demand where actually used (var(--font-*)), but no
-// longer sit on the critical path of pages that don't use them.
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  preload: false,
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  preload: false,
-});
-
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  preload: false,
-});
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  preload: false,
-});
-
-const playfairDisplay = Playfair_Display({
-  variable: "--font-playfair",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  preload: false,
-});
 
 // ─── Retro-future marketing type ────────────────────────────────────────────
 // Orbitron/Raleway (the retro-future marketing pair) now live in
@@ -76,33 +37,9 @@ export default async function RootLayout({
   const isSitesRoute = headersList.get("x-site-pathname") !== null;
   const isClientSite = isSitesRoute || (!APP_HOSTS.includes(hostname) && !hostname.endsWith(".railway.app"));
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
-  // Fonts declared with next/font in THIS file are attributed to the root
-  // layout, which is in every route's graph — so Next emitted their
-  // <link rel=preload> on public client sites too, which use their own brand
-  // fonts and resolve none of these (verified live: a getComputedStyle sweep
-  // over every element plus ::before/::after on two production client-site
-  // pages matched none of these faces, and --font-sans computed to an empty
-  // string on a client-site <body>).
-  //
-  // Gating the className alone does NOT fix that, and we shipped that mistake
-  // once: next/font emits the preload from the font manifest keyed by the
-  // declaring module, not from whether the class is applied. Measured after
-  // deploy — still 2 preloaded woff2 (53KB) on every client-site page.
-  //
-  // The fix is where a font is DECLARED. Orbitron/Raleway moved to
-  // app/(pages)/layout.tsx, which client sites never enter. Everything left
-  // here is preload:false, so it costs a client site nothing: no preload link,
-  // and no fetch, because nothing on the page matches the face.
-  //
-  // The className gate below is still worth keeping — it stops client sites
-  // inheriting unused custom properties — but it is a tidiness measure, not
-  // the thing that saves the bytes.
-  // (geistMono is deliberately NOT gated — app/sites/**/checkout uses the
-  // `font-mono` utility, which resolves through --font-mono to
-  // var(--font-geist-mono), so client sites still need it.)
-  const appShellFontVariables = isClientSite
-    ? ""
-    : `${geistSans.variable} ${dmSans.variable} ${inter.variable} ${playfairDisplay.variable}`;
+  // App-wide typography uses local system font stacks declared in globals.css.
+  // Avoiding remote font downloads keeps production builds deterministic and
+  // lets self-hosted deployments build without outbound Google Fonts access.
   return (
     // Client sites are pinned light at the ROOT: the class both keeps the
     // token media block (`:root:not(.light)`) from firing and, with the
@@ -172,7 +109,7 @@ gtag('config', '${gaId}');`,
         )}
       </head>
       <body
-        className={`${geistMono.variable} ${appShellFontVariables} antialiased min-h-screen flex flex-col`}
+        className="antialiased min-h-screen flex flex-col"
       >
         {isClientSite ? (
           // Public client sites supply their own nav/footer (app/sites/[domain]

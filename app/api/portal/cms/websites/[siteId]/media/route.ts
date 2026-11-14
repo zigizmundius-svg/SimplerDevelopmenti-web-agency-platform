@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { media, brandingProfiles } from '@/lib/db/schema';
@@ -10,6 +11,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ siteId: 
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const userId = parseInt(session.user.id, 10);
   const site = await resolveClientSite(userId, parseInt(siteId));
   if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
@@ -77,7 +80,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ siteId: 
       brandingProfileName: brandingProfiles.name,
     })
     .from(media)
-    .leftJoin(brandingProfiles, eq(media.brandingProfileId, brandingProfiles.id))
+    .leftJoin(brandingProfiles, and(eq(media.brandingProfileId, brandingProfiles.id), eq(brandingProfiles.clientId, client.id)))
     .where(and(...conditions))
     .orderBy(desc(media.createdAt))
     .limit(limit)

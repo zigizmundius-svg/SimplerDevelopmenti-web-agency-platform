@@ -3,7 +3,7 @@
 // in the sibling drain cron (plugin-runs-drain). Splitting fire-from-execute
 // keeps each cron tick fast and bounded.
 //
-// Auth: Vercel cron platform header `x-vercel-cron: 1` OR a Bearer secret
+// Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
 // in `Authorization` matching `process.env.CRON_SECRET`. Mirrors the auth
 // pattern used by app/api/cron/process-scheduled-automations/route.ts.
 //

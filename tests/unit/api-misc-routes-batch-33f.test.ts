@@ -23,8 +23,24 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 const getPortalClientMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
+}));
+
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    const client = await getPortalClientMock();
+    if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
+    const [site] = selectQueue.shift() ?? [];
+    if (!site || site.id !== siteId || site.clientId !== client.id) {
+      return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
+    }
+    return { site, client, userId: Number(session.user.id), role: 'owner' };
+  },
 }));
 
 const getDeploymentEventsMock = vi.fn();
@@ -194,7 +210,6 @@ describe('GET /api/portal/websites/[siteId]/deployments/[deploymentId]/logs', ()
     );
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.success).toBe(false);
     expect(body.message).toBe('Unauthorized');
   });
 

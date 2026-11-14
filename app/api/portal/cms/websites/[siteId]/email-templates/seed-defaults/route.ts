@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { websiteEmailTemplates, clientWebsites, brandingProfiles, clients } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { resolveClientSite } from '@/lib/portal-client';
 import { getDefaultTemplates } from '@/lib/email/default-email-templates';
 import { renderBlocksToEmailHtml } from '@/lib/email';
@@ -13,6 +14,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const site = await resolveClientSite(parseInt(session.user.id, 10), parseInt(siteId));
   if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
@@ -53,7 +56,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
   // Load branding profile data if found
   if (brandingProfileId) {
     const [profile] = await db.select().from(brandingProfiles)
-      .where(eq(brandingProfiles.id, brandingProfileId)).limit(1);
+      .where(and(eq(brandingProfiles.id, brandingProfileId), eq(brandingProfiles.clientId, site.clientId))).limit(1);
     if (profile) {
       // Get company name from client
       let companyName: string | undefined;

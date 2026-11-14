@@ -27,7 +27,8 @@ vi.mock('@/lib/auth', () => ({
 
 const getPortalClientMock = vi.fn();
 const resolveClientSiteMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
 }));
@@ -38,8 +39,19 @@ vi.mock('@/lib/github', () => ({
 }));
 
 const hasServiceAccessMock = vi.fn();
-vi.mock('@/lib/portal-auth', () => ({
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
   hasServiceAccess: (...args: unknown[]) => hasServiceAccessMock(...args),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    const client = await getPortalClientMock();
+    if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
+    const resolved = await resolveClientSiteMock(Number(session.user.id), siteId);
+    if (resolved === null) return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
+    const site = resolved ?? { id: siteId, clientId: client?.id ?? 5, githubRepoName: 'org/repo' };
+    return { site, client: client ?? { id: 5 }, userId: Number(session.user.id), role: 'owner' };
+  },
 }));
 
 const convertAllSlidesToV2Mock = vi.fn();
@@ -258,6 +270,8 @@ beforeEach(() => {
   authMock.mockReset();
   getPortalClientMock.mockReset();
   resolveClientSiteMock.mockReset();
+  resolveClientSiteMock.mockImplementation(async () => selectQueue.shift()?.[0] ?? null);
+  resolveClientSiteMock.mockImplementation(async () => selectQueue.shift()?.[0] ?? null);
   addCollaboratorMock.mockReset();
   convertAllSlidesToV2Mock.mockReset();
   isV2SlidesMock.mockReset();

@@ -68,9 +68,22 @@ vi.mock('@/lib/auth', () => ({
 
 const getPortalClientMock = vi.fn();
 const resolvePortalSiteMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
   resolvePortalSite: (...args: unknown[]) => resolvePortalSiteMock(...args),
+}));
+
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    const resolved = await resolvePortalSiteMock(Number(session.user.id), siteId);
+    if (resolved === null) return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
+    const pair = resolved ?? { site: { id: siteId, clientId: 10, vercelProjectId: 'prj_dedicated' }, client: { id: 10 } };
+    return { ...pair, userId: Number(session.user.id), role: 'owner' };
+  },
 }));
 
 const addDomainMock = vi.fn();

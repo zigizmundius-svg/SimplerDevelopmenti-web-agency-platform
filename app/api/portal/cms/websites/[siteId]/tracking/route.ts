@@ -12,6 +12,7 @@
 // keys — no hardcoded allowlist in this file.
 
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { and, eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -62,6 +63,8 @@ export async function GET(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const resolved = await resolveSite(siteId);
   if (!resolved.ok) return resolved.response;
 
@@ -81,6 +84,8 @@ export async function PUT(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const resolved = await resolveSite(siteId);
   if (!resolved.ok) return resolved.response;
 

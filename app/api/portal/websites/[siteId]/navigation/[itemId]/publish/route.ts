@@ -1,34 +1,9 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
-import { clientWebsites, siteNavigation } from '@/lib/db/schema';
+import { siteNavigation } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { publishNavItem } from '@/lib/sites/publish-nav';
-
-async function verifyItemAccess(siteIdRaw: string, itemIdRaw: string) {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return null;
-  const siteId = parseInt(siteIdRaw);
-  const itemId = parseInt(itemIdRaw);
-  if (isNaN(siteId) || isNaN(itemId)) return null;
-  const [row] = await db
-    .select({ navId: siteNavigation.id })
-    .from(siteNavigation)
-    .innerJoin(clientWebsites, eq(clientWebsites.id, siteNavigation.websiteId))
-    .where(
-      and(
-        eq(siteNavigation.id, itemId),
-        eq(siteNavigation.websiteId, siteId),
-        eq(clientWebsites.clientId, client.id),
-      ),
-    )
-    .limit(1);
-  return row ? { itemId } : null;
-}
 
 /**
  * Promote a single nav item's draft to live. Mirrors MCP `nav_publish`.
@@ -40,12 +15,24 @@ export async function POST(
   { params }: { params: Promise<{ siteId: string; itemId: string }> },
 ) {
   const { siteId, itemId } = await params;
-  const access = await verifyItemAccess(siteId, itemId);
-  if (!access) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
+
+  const [item] = await db.select({ id: siteNavigation.id })
+    .from(siteNavigation)
+    .where(and(
+      eq(siteNavigation.id, parseInt(itemId, 10)),
+      eq(siteNavigation.websiteId, authorized.site.id),
+    ))
+    .limit(1);
+  if (!item) return NextResponse.json({ success: false, message: 'Navigation item not found' }, { status: 404 });
+
   try {
-    const result = await publishNavItem(access.itemId);
+    const result = await publishNavItem(item.id);
     return NextResponse.json({ success: true, data: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Publish failed';

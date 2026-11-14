@@ -396,23 +396,24 @@ describe('GET /api/cron/expire-mcp-pendings', () => {
     });
   });
 
-  it('runs expiration when x-vercel-cron header is "1" (no bearer required)', async () => {
+  it('rejects forged when x-vercel-cron header is "1" (no bearer required)', async () => {
+    process.env.CRON_SECRET = 'shh';
     expireStalePendingsMock.mockResolvedValue({ expired: 0 });
     const res = await expireMcpPendingsRoute.GET(
       makeReq('http://x/api/cron/expire-mcp-pendings', {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    expect(expireStalePendingsMock).toHaveBeenCalled();
+    expect(res.status).toBe(401);
   });
 
   it('parses ttlSeconds and ids from query params', async () => {
+    process.env.CRON_SECRET = 'shh';
     expireStalePendingsMock.mockResolvedValue({ expired: 1 });
     const res = await expireMcpPendingsRoute.GET(
       makeReq(
         'http://x/api/cron/expire-mcp-pendings?ttlSeconds=600&ids=1,2,3,not-a-number,4',
-        { headers: { 'x-vercel-cron': '1' } },
+        { headers: { authorization: 'Bearer shh' } },
       ),
     );
     expect(res.status).toBe(200);
@@ -423,10 +424,11 @@ describe('GET /api/cron/expire-mcp-pendings', () => {
   });
 
   it('treats non-numeric ttlSeconds as undefined', async () => {
+    process.env.CRON_SECRET = 'shh';
     expireStalePendingsMock.mockResolvedValue({ expired: 0 });
     const res = await expireMcpPendingsRoute.GET(
       makeReq('http://x/api/cron/expire-mcp-pendings?ttlSeconds=banana', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

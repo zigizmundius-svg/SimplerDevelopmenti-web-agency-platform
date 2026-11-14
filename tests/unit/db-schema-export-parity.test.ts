@@ -299,6 +299,7 @@ const EXPECTED_EXPORTS: readonly string[] = [
   'blockTemplates',
   'bookingAddOns',
   'bookingAttendees',
+  'bookingAuditLogs',
   'bookingDateOverrides',
   'bookingPageMembers',
   'bookingPages',
@@ -628,6 +629,7 @@ const EXPECTED_TABLE_NAMES: Readonly<Record<string, string>> = {
   blockTemplates: 'block_templates',
   bookingAddOns: 'booking_add_ons',
   bookingAttendees: 'booking_attendees',
+  bookingAuditLogs: 'booking_audit_logs',
   bookingDateOverrides: 'booking_date_overrides',
   bookingPageMembers: 'booking_page_members',
   bookingPages: 'booking_pages',
@@ -952,13 +954,13 @@ describe('lib/db/schema export parity', () => {
     expect(actualTables).toEqual(EXPECTED_TABLE_NAMES);
   });
 
-  it('reports the recorded number of tables (312)', () => {
+  it('reports the recorded number of tables (313)', () => {
     const schemaMap = Schema as unknown as Record<string, unknown>;
     let count = 0;
     for (const value of Object.values(schemaMap)) {
       if (value && typeof value === 'object' && isTable(value)) count += 1;
     }
     expect(count).toBe(Object.keys(EXPECTED_TABLE_NAMES).length);
-    expect(count).toBe(312);
+    expect(count).toBe(313);
   });
 });

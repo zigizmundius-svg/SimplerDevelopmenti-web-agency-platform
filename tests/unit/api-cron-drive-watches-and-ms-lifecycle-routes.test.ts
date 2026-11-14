@@ -259,7 +259,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     expect(res.status).toBe(401);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
+  it('rejects forged the Vercel cron header without bearer token', async () => {
     process.env.CRON_SECRET = 'shh';
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
@@ -267,23 +267,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      examined: number;
-      candidates: number;
-      renewed: number;
-      skipped: number;
-      failed: number;
-      webhookAddress: string;
-    };
-    expect(json.success).toBe(true);
-    expect(json.examined).toBe(0);
-    expect(json.candidates).toBe(0);
-    expect(json.renewed).toBe(0);
-    expect(json.skipped).toBe(0);
-    expect(json.failed).toBe(0);
-    expect(json.webhookAddress).toMatch(/\/api\/google-webhook\/drive$/);
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -303,7 +287,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as { webhookAddress: string };
@@ -319,7 +303,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as { webhookAddress: string };
@@ -335,7 +319,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://host.example.com/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as { webhookAddress: string };
@@ -353,7 +337,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {
@@ -380,7 +364,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as { candidates: number; renewed: number };
@@ -394,7 +378,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -427,7 +411,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     // First update should be the token persistence.
@@ -449,7 +433,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(updateCalls[0].set).toMatchObject({
@@ -464,7 +448,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(getDriveStartPageTokenMock).toHaveBeenCalledTimes(1);
@@ -485,7 +469,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(stopDriveChangesMock).toHaveBeenCalledTimes(1);
@@ -510,7 +494,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -531,7 +515,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {
@@ -552,7 +536,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as { skipped: number; renewed: number };
@@ -568,7 +552,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {
@@ -608,7 +592,7 @@ describe('GET /api/cron/renew-drive-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-drive-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-drive-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = (await res.json()) as {

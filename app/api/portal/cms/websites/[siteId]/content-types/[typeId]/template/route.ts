@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { assertBlocksAllowedForRole, BlockGateError } from '@/lib/security/block-allowlist';
 import { auth } from '@/lib/auth';
+import type { Session } from 'next-auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
 import { clientWebsites, postTypes } from '@/lib/db/schema';
@@ -17,8 +20,16 @@ interface BlockLike {
 
 const POST_CONTENT_TYPE = 'post-content';
 
-async function verifyTypeAccess(siteIdRaw: string, typeIdRaw: string) {
-  const session = await auth();
+async function verifyTypeAccess(
+  siteIdRaw: string,
+  typeIdRaw: string,
+  sessionOverride?: Session | null,
+) {
+  // PUT already reads the session for the block-role check; reuse it rather
+  // than consuming a second auth lookup (and avoid inconsistent session reads).
+  const session: Session | null = sessionOverride === undefined
+    ? (await auth()) as Session | null
+    : sessionOverride;
   if (!session?.user?.id) return null;
   const client = await getPortalClient(parseInt(session.user.id, 10));
   if (!client) return null;
@@ -80,6 +91,8 @@ function makeDefaultTemplate() {
 // vs "you have a saved template".
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
@@ -110,7 +123,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
 // hides the placeholder from the picker once one exists.
 export async function PUT(req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
-  const ctx = await verifyTypeAccess(siteId, typeId);
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
+  const session = (await auth()) as Session | null;
+  const ctx = await verifyTypeAccess(siteId, typeId, session);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
@@ -123,6 +139,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ siteId: 
   if (template && Array.isArray(template.blocks)) {
     inputBlocks = template.blocks;
     if (template.version) version = template.version;
+  }
+
+  try {
+    assertBlocksAllowedForRole(inputBlocks, (session?.user as { role?: string } | undefined)?.role);
+  } catch (err) {
+    if (err instanceof BlockGateError) {
+      return NextResponse.json({ success: false, message: err.message }, { status: 403 });
+    }
+    throw err;
   }
 
   // Drop all but the first post-content block.
