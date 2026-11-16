@@ -192,13 +192,13 @@ describe('POST /api/portal/tools/booking/[id]/bookings @booking @portal @tenancy
     expect(results.filter((result) => result.status === 200 || result.status === 201)).toHaveLength(1);
 
     const sql = getTestSql();
-    const rows = await sql<{ id: number; guest_name: string; status: string }[]>\`
+    const rows = await sql<{ id: number; guest_name: string; status: string }[]>`
       SELECT id, guest_name, status
-      FROM \${sql(TEST_SCHEMA)}.bookings
-      WHERE booking_page_id = \${page.id}
-        AND start_time = \${new Date(startTime)}
+      FROM ${sql(TEST_SCHEMA)}.bookings
+      WHERE booking_page_id = ${page.id}
+        AND start_time = ${new Date(startTime)}
         AND status <> 'cancelled'
-    \`;
+    `;
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('confirmed');
   });
