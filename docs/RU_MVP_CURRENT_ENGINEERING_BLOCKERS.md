@@ -82,3 +82,19 @@ Next engineering sequence:
 7. perform staging smoke, restore, booking concurrency, tenant-isolation and security tests before any real customer data is introduced.
 
 **Safety rule:** do not merge the draft PR, deploy, provision paid infrastructure, or load real customer data without the owner's explicit approval.
+
+## 7. Additional CRM authorization findings and fixes on the adaptation branch
+
+A focused source review of the portal CRM CSV routes found two issues:
+
+- `POST /api/portal/crm/import` checked only that the user had a session, a selected client and a CRM subscription. It did not apply the shared portal role gate, so a low-privilege viewer could reach a bulk-write path.
+- `GET /api/portal/crm/export` scoped database reads to the selected tenant, but did not pass through the shared CRM entitlement gate. This allowed CRM export even when the module entitlement was absent.
+- CSV export also emitted user-controlled values without neutralizing spreadsheet formula prefixes. A contact/company/deal field beginning with `=`, `+`, `-` or `@` could be interpreted as a formula by spreadsheet software.
+
+**Fixes committed to `platform/ru-adaptation`:**
+- Import now uses `authorizePortal({ action: 'write', requireService: 'crm' })`, requiring a live portal role with write permission and an active CRM entitlement.
+- Export now uses `authorizePortal({ action: 'read', requireService: 'crm' })`, preserving viewer-level read access while enforcing the module entitlement.
+- CSV values with a formula marker (including after leading whitespace) are prefixed with an apostrophe before normal CSV escaping.
+- Unit tests were updated to mock the shared authorizer and cover unauthorized/denied import, missing export entitlement, and spreadsheet formula neutralization.
+
+These changes are committed but must still pass the new head's GitHub Actions checks. They are source-level changes; no local test execution was possible in this environment. Continue auditing the remaining CRM mutations, booking routes and the wider 875-route API surface for equivalent gaps.
