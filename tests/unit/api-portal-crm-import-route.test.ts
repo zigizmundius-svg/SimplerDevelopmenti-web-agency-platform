@@ -245,6 +245,20 @@ describe('POST /api/portal/crm/import — auth + validation', () => {
     expect(res.status).toBe(401);
   });
 
+  it('denies viewers before parsing or inserting CSV rows', async () => {
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'Permission denied' }), {
+        status: 403, headers: { 'content-type': 'application/json' },
+      }),
+    });
+    const res = await POST(makeFormDataRequest({
+      file: { fileName: 'x.csv', content: 'firstName\nAlice' },
+      entityType: 'contact',
+    }));
+    expect(res.status).toBe(403);
+    expect(insertCalls).toHaveLength(0);
+  });
+
   it('returns 404 when getPortalClient returns null', async () => {
     authorizePortalMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ success: false, message: 'Client not found' }), {
