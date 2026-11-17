@@ -3,7 +3,6 @@ import { authorizePortal, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { crmContacts, crmCompanies, crmDeals, crmPipelines, crmPipelineStages } from '@/lib/db/schema';
 import { and, eq, asc } from 'drizzle-orm';
-import { hasServiceAccess } from '@/lib/portal-auth';
 
 function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
