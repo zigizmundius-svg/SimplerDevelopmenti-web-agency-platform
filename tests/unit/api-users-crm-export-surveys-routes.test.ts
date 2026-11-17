@@ -35,6 +35,13 @@ vi.mock('@/lib/portal-client', () => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
 }));
 
+const authorizePortalMock = vi.fn();
+vi.mock('@/lib/portal-auth', () => ({
+  authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
+  isAuthError: (result: unknown) =>
+    typeof result === 'object' && result !== null && 'response' in result,
+}));
+
 const hashMock = vi.fn(async (s: string) => `hashed:${s}`);
 vi.mock('bcryptjs', () => ({ hash: (s: string, r: number) => hashMock(s, r) }));
 
@@ -290,6 +297,8 @@ beforeEach(() => {
 
   authMock.mockReset();
   getPortalClientMock.mockReset();
+  authorizePortalMock.mockReset();
+  authorizePortalMock.mockResolvedValue({ client: { id: 10 }, userId: 7, role: 'viewer' });
   hashMock.mockClear();
   emitEventMock.mockReset();
   getBrandingBySurveySlugMock.mockReset();
@@ -536,7 +545,11 @@ describe('GET /api/portal/crm/export', () => {
   const { GET } = crmExportRoute;
 
   it('returns 401 when there is no session', async () => {
-    authMock.mockResolvedValue(null);
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
+        status: 401, headers: { 'content-type': 'application/json' },
+      }),
+    });
     const res = await GET(makeNextGet('entityType=contact'));
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -544,8 +557,11 @@ describe('GET /api/portal/crm/export', () => {
   });
 
   it('returns 404 when portal client cannot be resolved', async () => {
-    authMock.mockResolvedValue(ADMIN_SESSION);
-    getPortalClientMock.mockResolvedValue(null);
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'Client not found' }), {
+        status: 404, headers: { 'content-type': 'application/json' },
+      }),
+    });
     const res = await GET(makeNextGet('entityType=contact'));
     expect(res.status).toBe(404);
     const body = await res.json();
@@ -611,6 +627,27 @@ describe('GET /api/portal/crm/export', () => {
     expect(lines[1]).toContain('"Sm""ith"');
     // Second row's null fields render as empty
     expect(lines[2]).toBe('Bob,,b@x.test,,,,,,,');
+  });
+
+
+  it('prefixes spreadsheet formula values to prevent CSV formula injection', async () => {
+    selectQueue.push([{
+      firstName: '=HYPERLINK("https://attacker.test","click")',
+      lastName: '+SUM(1,1)',
+      email: 'user@example.test',
+      phone: null,
+      title: null,
+      companyName: null,
+      status: null,
+      source: null,
+      score: null,
+      createdAt: null,
+    }]);
+    const res = await GET(makeNextGet('entityType=contact'));
+    expect(res.status).toBe(200);
+    const csv = await res.text();
+    expect(csv).toContain(`'=HYPERLINK(""https://attacker.test"",""click"")`);
+    expect(csv).toContain(`'+SUM(1,1)`);
   });
 
   it('exports contacts CSV without search/status filters', async () => {
