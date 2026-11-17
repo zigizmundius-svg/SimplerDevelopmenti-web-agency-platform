@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortal, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { crmContacts, crmCompanies, crmDeals, crmPipelines, crmPipelineStages } from '@/lib/db/schema';
 import { and, eq, asc } from 'drizzle-orm';
@@ -48,35 +47,12 @@ const REQUIRED_FIELDS: Record<EntityType, string[]> = {
 };
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id)
-    return NextResponse.json(
-      { success: false, message: 'Unauthorized' },
-      { status: 401 }
-    );
-
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client)
-    return NextResponse.json(
-      { success: false, message: 'Client not found' },
-      { status: 404 }
-    );
-
-  // Paid-module gate: CRM writes require an active CRM (or bundle) subscription.
-  // Mirrors the MCP layer's requireService(clientId, 'crm'). Checked before we
-  // parse the upload so an unentitled tenant can't trigger CSV processing.
-  if (!(await hasServiceAccess(client.id, 'crm'))) {
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'This feature requires an active crm subscription.',
-        requiresService: 'crm',
-        upsellUrl: '/portal/services',
-      },
-      { status: 403 }
-    );
-  }
+  // Import mutates tenant CRM data, so require both the CRM entitlement and
+  // the member-level write permission. A valid session/client selection alone
+  // is not sufficient: viewers must not be able to bulk-create records.
+  const authorization = await authorizePortal({ action: 'write', requireService: 'crm' });
+  if (isAuthError(authorization)) return authorization.response;
+  const { client } = authorization;
 
   let formData: globalThis.FormData;
   try {
