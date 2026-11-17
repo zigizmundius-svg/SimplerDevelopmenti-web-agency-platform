@@ -568,6 +568,16 @@ describe('GET /api/portal/crm/export', () => {
     expect(body.message).toBe('Client not found');
   });
 
+  it('returns 403 when CRM entitlement is missing', async () => {
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'CRM subscription required' }), {
+        status: 403, headers: { 'content-type': 'application/json' },
+      }),
+    });
+    const res = await GET(makeNextGet('entityType=contact'));
+    expect(res.status).toBe(403);
+  });
+
   it('returns 400 when entityType is missing', async () => {
     authMock.mockResolvedValue(ADMIN_SESSION);
     getPortalClientMock.mockResolvedValue({ id: 10 });
