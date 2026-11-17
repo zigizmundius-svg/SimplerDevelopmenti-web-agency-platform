@@ -14,7 +14,7 @@ function escapeCsvField(value: unknown): string {
   const str = String(value);
   // Prevent spreadsheet formula execution when exported fields begin with a
   // formula marker (including after leading whitespace).
-  const safe = /^[\\s]*[=+\\-@]/.test(str) ? `'${str}` : str;
+  const safe = /^\s*[=+\-@]/.test(str) ? `'${str}` : str;
   if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
     return '"' + safe.replace(/"/g, '""') + '"';
   }
