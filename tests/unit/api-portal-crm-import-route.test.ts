@@ -12,19 +12,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mocks (declared BEFORE the route import — Vitest hoists vi.mock)
 // ---------------------------------------------------------------------------
 
-const authMock = vi.fn();
-vi.mock('@/lib/auth', () => ({
-  auth: () => authMock(),
-}));
-
-const getPortalClientMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
-  getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
-}));
-
-const hasServiceAccessMock = vi.fn();
+const authorizePortalMock = vi.fn();
 vi.mock('@/lib/portal-auth', () => ({
-  hasServiceAccess: (...args: unknown[]) => hasServiceAccessMock(...args),
+  authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
+  isAuthError: (result: unknown) =>
+    typeof result === 'object' && result !== null && 'response' in result,
 }));
 
 vi.mock('@/lib/db/schema', () => {
@@ -222,13 +214,8 @@ beforeEach(() => {
   insertCalls.length = 0;
   idCounter = 1000;
 
-  authMock.mockReset();
-  getPortalClientMock.mockReset();
-  hasServiceAccessMock.mockReset();
-
-  authMock.mockResolvedValue({ user: { id: '7' } });
-  getPortalClientMock.mockResolvedValue({ id: 10 });
-  hasServiceAccessMock.mockResolvedValue(true);
+  authorizePortalMock.mockReset();
+  authorizePortalMock.mockResolvedValue({ client: { id: 10 }, userId: 7, role: 'member' });
 });
 
 // ---------------------------------------------------------------------------
@@ -237,7 +224,11 @@ beforeEach(() => {
 
 describe('POST /api/portal/crm/import — auth + validation', () => {
   it('returns 401 when there is no session', async () => {
-    authMock.mockResolvedValueOnce(null);
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
+        status: 401, headers: { 'content-type': 'application/json' },
+      }),
+    });
     const res = await POST(makeFormDataRequest({}));
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -245,13 +236,21 @@ describe('POST /api/portal/crm/import — auth + validation', () => {
   });
 
   it('returns 401 when session has no user id', async () => {
-    authMock.mockResolvedValueOnce({ user: {} });
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
+        status: 401, headers: { 'content-type': 'application/json' },
+      }),
+    });
     const res = await POST(makeFormDataRequest({}));
     expect(res.status).toBe(401);
   });
 
   it('returns 404 when getPortalClient returns null', async () => {
-    getPortalClientMock.mockResolvedValueOnce(null);
+    authorizePortalMock.mockResolvedValueOnce({
+      response: new Response(JSON.stringify({ success: false, message: 'Client not found' }), {
+        status: 404, headers: { 'content-type': 'application/json' },
+      }),
+    });
     const res = await POST(makeFormDataRequest({}));
     expect(res.status).toBe(404);
     const body = await res.json();
