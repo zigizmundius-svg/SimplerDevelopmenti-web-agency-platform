@@ -4,6 +4,8 @@ import { eq, and } from 'drizzle-orm';
 import type { BookingAvailabilitySlot } from '@/lib/db/schema';
 import { zonedDateStr, zonedDayOfWeek, zonedMinutesOfDay } from '@/lib/booking/timezone';
 
+export type BookingQueryDb = Pick<typeof db, 'select'>;
+
 type PageLike = {
   id: number;
   duration: number;
@@ -29,12 +31,13 @@ export async function isSlotWithinAvailability(
   page: PageLike,
   slotStart: Date,
   staffId?: number | null,
+  queryDb: BookingQueryDb = db,
 ): Promise<boolean> {
   const tz = page.timezone || 'UTC';
   const dateStr = zonedDateStr(slotStart, tz); // calendar date in the page timezone
 
   // Date overrides take precedence over the weekly availability grid.
-  const [override] = await db.select().from(bookingDateOverrides)
+  const [override] = await queryDb.select().from(bookingDateOverrides)
     .where(and(
       eq(bookingDateOverrides.bookingPageId, page.id),
       eq(bookingDateOverrides.date, dateStr),
@@ -53,14 +56,15 @@ export async function isSlotWithinAvailability(
     // selected (allowStaffSelection flow), exactly as the slots route resolves it.
     let memberAvailability: BookingAvailabilitySlot[] | null = null;
     if (staffId) {
-      const [member] = await db.select().from(bookingPageMembers)
+      const [member] = await queryDb.select().from(bookingPageMembers)
         .where(and(
           eq(bookingPageMembers.bookingPageId, page.id),
           eq(bookingPageMembers.userId, staffId),
           eq(bookingPageMembers.active, true),
         ))
         .limit(1);
-      if (member?.availability) memberAvailability = member.availability as BookingAvailabilitySlot[];
+      if (!member) return false;
+      if (member.availability) memberAvailability = member.availability as BookingAvailabilitySlot[];
     }
     const dayOfWeek = zonedDayOfWeek(slotStart, tz);
     const availability = memberAvailability || (page.availability as BookingAvailabilitySlot[]) || [];

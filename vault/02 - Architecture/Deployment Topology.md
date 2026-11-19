@@ -68,35 +68,34 @@ The main application (`app/`) deploys to Vercel. Config in `vercel.json`:
 
 ## Cron Inventory
 
-All crons are declared in `vercel.json` and run as Vercel-managed serverless functions. Schedules are UTC.
+The live source of truth is `vercel.json`, which currently defines 48 scheduled routes in UTC. The old short list in this architecture note became incomplete as the platform grew.
 
-| Path | Schedule | Purpose |
-|---|---|---|
-| `/api/cron/process-embeddings` | `* * * * *` (every minute) | Drain `brain_embedding_jobs` queue, generate pgvector embeddings |
-| `/api/cron/process-scheduled-automations` | `* * * * *` (every minute) | Trigger time-based automation rules |
-| `/api/cron/plugin-runs-drain` | `* * * * *` (every minute) | Process pending plugin run queue |
-| `/api/cron/plugin-jobs-tick` | `* * * * *` (every minute) | Advance plugin job state machine |
-| `/api/cron/pm-recurrences` | `*/5 * * * *` (every 5 min) | Materialise recurring kanban cards |
-| `/api/cron/process-playbook-waits` | `*/5 * * * *` (every 5 min) | Resume paused Brain playbook runs |
-| `/api/cron/drive-sync` | `*/10 * * * *` (every 10 min) | Sync Google Drive changes to Brain |
-| `/api/cron/renew-microsoft-subscriptions` | `*/25 * * * *` (every 25 min) | Renew Microsoft Graph change subscriptions |
-| `/api/cron/stuck-booking-holds` | `*/30 * * * *` (every 30 min) | Release expired booking holds |
-| `/api/cron/process-survey-email-followups` | `*/15 * * * *` (every 15 min) | Send queued survey follow-up emails |
-| `/api/cron/booking-reminders` | `0 * * * *` (every hour) | Send booking reminder notifications |
-| `/api/cron/ticket-sla-breaches` | `7 * * * *` (every hour at :07) | Flag SLA-breaching support tickets |
-| `/api/cron/expire-mcp-pendings` | `17 3 * * *` (daily 03:17 UTC) | Expire stale MCP approval links |
-| `/api/cron/renew-gmail-watches` | `47 3 * * *` (daily 03:47 UTC) | Renew Gmail push notification watches |
-| `/api/cron/renew-drive-watches` | `13 4 * * *` (daily 04:13 UTC) | Renew Google Drive push notification watches |
-| `/api/cron/resend-usage-sync` | `15 4 * * *` (daily 04:15 UTC) | Sync Resend email usage to billing meters |
-| `/api/cron/usage-rollup` | `45 4 * * *` (daily 04:45 UTC) | Roll up usage events into billing periods |
-| `/api/cron/brain-12` | `30 7 * * *` (daily 07:30 UTC) | Brain daily digest / 12-item summary |
-| `/api/cron/brain-daily-notes` | `5 6 * * *` (daily 06:05 UTC) | Generate Brain daily note templates |
-| `/api/cron/brain-empty-old-trash` | `15 7 * * *` (daily 07:15 UTC) | Permanently delete old Brain trash items |
-| `/api/cron/failing-automations-notify` | `0 12 * * *` (daily 12:00 UTC) | Notify on consistently failing automations |
-| `/api/cron/pm-column-snapshots` | `55 23 * * *` (daily 23:55 UTC) | Snapshot kanban column card counts for analytics |
-| `/api/cron/surveys-zero-responses` | `30 10 * * 1` (Mon 10:30 UTC) | Alert on surveys with zero responses |
-| `/api/cron/stale-crm-deals` | `0 11 * * 1` (Mon 11:00 UTC) | Flag CRM deals with no recent activity |
-| `/api/cron/example-weekly-drop` | `0 14 * * 1` (Mon 14:00 UTC) | Publish weekly content drop |
+See [Self-hosted Cron Migration](../../docs/SELF_HOSTED_CRON_MIGRATION.md) for the complete 48-route inventory, frequency distribution, authentication requirements, and the proposed VPS dispatcher design.
+
+## Russian Self-hosting Readiness
+
+The current production topology is not a single-server deployment:
+
+- The Next.js application currently targets Vercel.
+- The Yjs realtime server is a separate Railway service and has its own Dockerfile.
+- Inbound email ingestion is a Cloudflare Worker.
+- The repository's root `docker-compose.yml` is explicitly a local development stack: it starts the app in dev mode, uses local Mailpit/MinIO, and contains development-only fallback credentials. It is not a production compose file.
+- There is no root production Dockerfile in the current tree. A production app image/build and service unit still need to be designed and tested.
+- The separate agents service has its own Dockerfile and must be included in any target topology only if the selected product features require it.
+
+A Russia-hosted target therefore requires an explicit decision for each component, not just moving the Next.js app:
+
+1. Main app + PostgreSQL/pgvector.
+2. Realtime server and its database connectivity.
+3. Agents service and its internal authentication/network boundary.
+4. S3-compatible media storage.
+5. Email delivery and inbound-email handling.
+6. Cron dispatcher and durable run ledger.
+7. DNS/TLS, backups, monitoring, restore and incident access.
+
+For the Russian market, review where personal data is collected, stored, processed, backed up, and forwarded by every external provider. A Russian VPS alone does not establish 152-FZ compliance. Do not enable real client data or production integrations until this data-flow review and the applicable legal controls are complete.
+
+The VPS cron design is documented separately in [Self-hosted Cron Migration](../../docs/SELF_HOSTED_CRON_MIGRATION.md). No infrastructure has been provisioned by this audit.
 
 ---
 

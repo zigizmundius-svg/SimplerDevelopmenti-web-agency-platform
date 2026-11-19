@@ -17,8 +17,7 @@ const RETENTION_DAYS = 90;
  * (`agent_action_log`) and redacted summary log (`agent_action_logs`) are
  * untouched — only the encrypted reconstructable capture is time-boxed.
  *
- * Auth: requires `Authorization: Bearer ${CRON_SECRET}` or Vercel's standard
- * cron header. Anyone else gets 401.
+ * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  *
  * Suggested schedule: daily at 04:23 UTC via vercel.json.
  */

@@ -1,12 +1,12 @@
 // Per-minute cron: drains queued content-tools plugin runs.
 //
-// Auth: Vercel cron platform header `x-vercel-cron: 1` OR a Bearer secret
+// Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
 // in `Authorization` matching `process.env.CRON_SECRET`. Mirrors the auth
 // pattern used by app/api/cron/process-scheduled-automations/route.ts.
 //
 // Volume cap: at most 5 candidates per tick, processed in batches of 2 by
 // drainQueuedRuns. Anthropic calls can take 30-60s — the parallelism cap
-// keeps the cron function well under Vercel's 60s ceiling on Pro.
+// Cron authentication is Bearer-only via lib/cron-auth.ts.
 // Idempotent under concurrent ticks: drainQueuedRuns CAS-claims via
 // executeRun, so two simultaneous cron invocations don't double-fire.
 

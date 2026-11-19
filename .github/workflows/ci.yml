@@ -1,8 +1,13 @@
 name: CI
 
+# CI only reads the repository; keep the default GITHUB_TOKEN least-privileged.
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [main]
+    branches: [main, platform/ru-adaptation]
+  workflow_dispatch:
   pull_request:
     branches: [main]
     # `labeled`/`unlabeled` are NOT in the default type set. Without them, adding
@@ -173,6 +178,9 @@ jobs:
       - name: File-size budget (god-file guard)
         if: needs.changes.outputs.code == 'true'
         run: bun scripts/check-file-budget.ts
+      - name: Cron route authentication inventory
+        if: needs.changes.outputs.code == 'true'
+        run: bun scripts/check-cron-auth.ts
       - name: Doc drift (cited paths must exist)
         run: bun scripts/check-doc-drift.ts
 
@@ -478,14 +486,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # NEXTAUTH_SECRET + ENCRYPTION_KEY are generated ephemerally (never
+      # Auth, encryption, and cron secrets are generated ephemerally (never
       # literals in the repo) ONCE here, then shared to every e2e leg via a
-      # short-lived artifact — the build inlines env, so build and serve must
-      # agree. ENCRYPTION_KEY is @security's AAF-001 capture/decrypt path.
+      # short-lived artifact. ENCRYPTION_KEY is @security's AAF-001 path;
+      # CRON_SECRET exercises the same Bearer-only auth required in production.
       - name: Generate ephemeral secrets (shared with e2e legs)
         run: |
           echo "NEXTAUTH_SECRET=$(openssl rand -hex 32)" > e2e-secrets.env
           echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> e2e-secrets.env
+          echo "CRON_SECRET=$(openssl rand -hex 32)" >> e2e-secrets.env
           cat e2e-secrets.env >> "$GITHUB_ENV"
 
       - name: Enable required Postgres extensions
@@ -495,7 +504,12 @@ jobs:
         run: bunx drizzle-kit push --force
 
       - name: Build app
-        run: bun run build
+        # This app's production bundle exceeds Node's default ~4GB V8 heap
+        # during webpack compilation. The ubuntu-latest runner has enough
+        # memory for an 8GB heap; keep the build worker count conservative.
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: bun run build -- --webpack
 
       # .next/cache is the build cache (can be hundreds of MB) — the serving
       # jobs only need the compiled output.

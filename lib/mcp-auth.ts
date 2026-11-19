@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { db } from '@/lib/db';
-import { portalApiKeys, oauthAccessTokens, clients } from '@/lib/db/schema';
+import { portalApiKeys, oauthAccessTokens, clients, users } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 
 export const PORTAL_KEY_PREFIX = 'sd_mcp_';
@@ -105,6 +105,16 @@ export function hashPortalApiKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
 
+/** A bearer credential is unusable once its owning account is deactivated. */
+async function isActivePortalUser(userId: number): Promise<boolean> {
+  const [user] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.active, true)))
+    .limit(1);
+  return Boolean(user);
+}
+
 /**
  * Validate a bearer token against the portal_api_keys table and return the
  * authenticated portal context (userId + client + scopes).
@@ -122,6 +132,7 @@ export async function resolvePortalApiKey(rawKey: string): Promise<PortalMcpCont
   if (!record) return null;
   if (record.revokedAt) return null;
   if (record.expiresAt && record.expiresAt < new Date()) return null;
+  if (!(await isActivePortalUser(record.userId))) return null;
 
   const [client] = await db
     .select()
@@ -172,6 +183,7 @@ export async function resolveOAuthToken(rawToken: string): Promise<PortalMcpCont
   if (!record) return null;
   if (record.revokedAt) return null;
   if (record.expiresAt && record.expiresAt < new Date()) return null;
+  if (!(await isActivePortalUser(record.userId))) return null;
 
   const [client] = await db
     .select()

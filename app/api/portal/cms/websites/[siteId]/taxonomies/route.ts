@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
@@ -24,6 +25,8 @@ export async function GET(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const site = await verifySiteAccess(siteId);
   if (!site) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
@@ -42,6 +45,8 @@ export async function POST(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const site = await verifySiteAccess(siteId);
   if (!site) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 

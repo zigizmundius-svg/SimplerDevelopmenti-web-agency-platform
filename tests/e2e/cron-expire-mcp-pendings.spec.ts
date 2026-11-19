@@ -10,6 +10,12 @@ import { runCleanups, createTestApiKey, createTestWebsite, McpTestClient } from 
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
+function cronHeaders() {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) throw new Error('CRON_SECRET is required for authenticated cron requests');
+  return { Authorization: `Bearer ${secret}` };
+}
+
 test.describe('Cron: expire stale MCP pendings @cron @mcp @approvals', () => {
   test('rejects unauthenticated requests', async ({ unauthApi }) => {
     const res = await unauthApi.get('/api/cron/expire-mcp-pendings');
@@ -39,24 +45,22 @@ test.describe('Cron: expire stale MCP pendings @cron @mcp @approvals', () => {
     expect(body.ttlDays).toBeGreaterThan(0);
   });
 
-  test('accepts Vercel cron header', async ({ request }) => {
+  test('rejects a forged Vercel cron marker', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/cron/expire-mcp-pendings`, {
       headers: { 'x-vercel-cron': '1' },
     });
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(typeof body.expiredCount).toBe('number');
+    expect(res.status()).toBe(401);
   });
 
   test('is idempotent — calling twice returns zero or same count on second call', async ({ request }) => {
+    test.skip(!process.env.CRON_SECRET, 'CRON_SECRET not set — skipping authenticated cron test');
     const first = await request.get(`${BASE_URL}/api/cron/expire-mcp-pendings`, {
-      headers: { 'x-vercel-cron': '1' },
+      headers: cronHeaders(),
     });
     expect(first.status()).toBe(200);
 
     const second = await request.get(`${BASE_URL}/api/cron/expire-mcp-pendings`, {
-      headers: { 'x-vercel-cron': '1' },
+      headers: cronHeaders(),
     });
     expect(second.status()).toBe(200);
     const secondBody = await second.json();
@@ -74,6 +78,7 @@ test.describe('Cron: actual expiration transition @cron @mcp @approvals', () => 
   });
 
   test('stale pending transitions to expired with errorMessage', async ({ clientApi, request }) => {
+    test.skip(!process.env.CRON_SECRET, 'CRON_SECRET not set — skipping authenticated cron test');
     // Stage a pending change
     const { website } = await createTestWebsite(clientApi);
     const { keyRecord, cleanup: keyCleanup } = await createTestApiKey(clientApi, {
@@ -99,7 +104,7 @@ test.describe('Cron: actual expiration transition @cron @mcp @approvals', () => 
     // Trigger cron with ttlSeconds=2, scoped to this pending id only.
     const cronRes = await request.get(
       `${BASE_URL}/api/cron/expire-mcp-pendings?ttlSeconds=2&ids=${pendingId}`,
-      { headers: { 'x-vercel-cron': '1' } },
+      { headers: cronHeaders() },
     );
     expect(cronRes.status()).toBe(200);
     const cronBody = await cronRes.json();
@@ -121,6 +126,7 @@ test.describe('Cron: actual expiration transition @cron @mcp @approvals', () => 
   });
 
   test('recent pending (younger than TTL) is NOT expired', async ({ clientApi, request }) => {
+    test.skip(!process.env.CRON_SECRET, 'CRON_SECRET not set — skipping authenticated cron test');
     const { website } = await createTestWebsite(clientApi);
     const { keyRecord, cleanup: keyCleanup } = await createTestApiKey(clientApi, {
       requireCmsApproval: true,
@@ -141,7 +147,7 @@ test.describe('Cron: actual expiration transition @cron @mcp @approvals', () => 
     // Call immediately with ttlSeconds=3600 — the pending is well within TTL.
     const cronRes = await request.get(
       `${BASE_URL}/api/cron/expire-mcp-pendings?ttlSeconds=3600&ids=${pendingId}`,
-      { headers: { 'x-vercel-cron': '1' } },
+      { headers: cronHeaders() },
     );
     expect(cronRes.status()).toBe(200);
     const cronBody = await cronRes.json();
@@ -153,6 +159,7 @@ test.describe('Cron: actual expiration transition @cron @mcp @approvals', () => 
   });
 
   test('ids filter scopes expiration — non-listed rows stay pending', async ({ clientApi, request }) => {
+    test.skip(!process.env.CRON_SECRET, 'CRON_SECRET not set — skipping authenticated cron test');
     const { website } = await createTestWebsite(clientApi);
     const { keyRecord, cleanup: keyCleanup } = await createTestApiKey(clientApi, {
       requireCmsApproval: true,
@@ -175,7 +182,7 @@ test.describe('Cron: actual expiration transition @cron @mcp @approvals', () => 
 
     const cronRes = await request.get(
       `${BASE_URL}/api/cron/expire-mcp-pendings?ttlSeconds=1&ids=${idA}`,
-      { headers: { 'x-vercel-cron': '1' } },
+      { headers: cronHeaders() },
     );
     const cronBody = await cronRes.json();
     expect(cronBody.expiredCount).toBe(1);

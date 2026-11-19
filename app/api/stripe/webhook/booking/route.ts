@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { bookings, bookingPages, bookingQuotes, clients, users, giftCertificates } from '@/lib/db/schema';
+import { bookings, bookingPages, bookingQuotes, giftCertificates } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { sendGuestConfirmation, sendHostNotification, loadBookingBrand } from '@/lib/email/booking-emails';
 import { createCalendarEvent } from '@/lib/google-calendar';
 import { createZoomMeeting } from '@/lib/zoom';
-import { emitEvent } from '@/lib/automation';
+import { updateBookingRecord } from '@/lib/booking/service';
 
 export const runtime = 'nodejs';
 
@@ -77,23 +76,30 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true });
       }
 
-      // Update booking payment status
+      // Read the pending booking and its page before committing the paid
+      // transition. Conference providers may persist a meetingLink as part of
+      // event creation; the confirmation outbox must only be released after
+      // that link is available, otherwise a fast worker can send an incomplete
+      // confirmation email.
       const [booking] = await db.select().from(bookings)
         .where(eq(bookings.id, bookingId)).limit(1);
 
-      if (!booking || booking.paymentStatus === 'paid') {
+      if (!booking || booking.paymentStatus === 'paid' || booking.status === 'cancelled') {
         return NextResponse.json({ received: true }); // idempotent
       }
 
-      await db.update(bookings)
-        .set({ paymentStatus: 'paid', paidAt: new Date(), updatedAt: new Date() })
-        .where(eq(bookings.id, bookingId));
-
-      // Get booking page for conference/calendar settings
+      // Get booking page for conference/calendar settings.
       const [page] = await db.select().from(bookingPages)
         .where(eq(bookingPages.id, booking.bookingPageId)).limit(1);
 
       if (!page) {
+        await updateBookingRecord({
+          bookingId: booking.id,
+          pageId: booking.bookingPageId,
+          paymentStatus: 'paid',
+          paidAt: new Date(),
+          actor: { actorType: 'webhook', source: 'stripe' },
+        });
         return NextResponse.json({ received: true });
       }
 
@@ -117,7 +123,10 @@ export async function POST(req: Request) {
       }
 
       if (page.conferenceType === 'zoom') {
-        meetingLink = await createZoomMeeting({
+        // createZoomMeeting persists the link before returning. Reuse it on a
+        // Stripe webhook retry so a crash between provider creation and the
+        // paid-state transaction cannot create a duplicate legacy Zoom room.
+        meetingLink = booking.meetingLink || await createZoomMeeting({
           clientId: page.clientId,
           bookingId: booking.id,
           title: `${page.title} — ${booking.guestName}`,
@@ -141,52 +150,22 @@ export async function POST(req: Request) {
         }
       }
 
-      if (meetingLink) {
-        await db.update(bookings)
-          .set({ meetingLink })
-          .where(eq(bookings.id, bookingId));
-      }
-
-      // Send confirmation emails
-      const emailData = {
-        guestName: booking.guestName,
-        guestEmail: booking.guestEmail,
-        pageTitle: page.title,
-        startTime: booking.startTime,
-        endTime: booking.endTime,
-        timezone: bookingTimezone,
-        cancelToken: booking.cancelToken,
-        bookingSlug: page.slug,
-        duration: page.duration,
-        meetingLink,
-        brand: await loadBookingBrand(page.id),
-      };
-
-      sendGuestConfirmation(emailData).catch(() => {});
-
-      const [client] = await db.select({ userId: clients.userId }).from(clients)
-        .where(eq(clients.id, page.clientId)).limit(1);
-      if (client) {
-        const [host] = await db.select({ email: users.email }).from(users)
-          .where(eq(users.id, client.userId)).limit(1);
-        if (host) {
-          sendHostNotification(host.email, emailData).catch(() => {});
-        }
-      }
-
-      emitEvent('booking.confirmed', page.clientId, 0, {
+      // Commit payment and the meeting link together. This transaction writes
+      // the confirmation email jobs, so workers cannot observe "paid" before
+      // the provider-generated meeting link has been persisted.
+      await updateBookingRecord({
         bookingId: booking.id,
-        bookingPageId: page.id,
-        pageTitle: page.title,
-        pageSlug: page.slug,
-        guestName: booking.guestName,
-        guestEmail: booking.guestEmail,
-        startTime: booking.startTime,
-        endTime: booking.endTime,
-        timezone: booking.timezone,
-        total: booking.total / 100, // dollars
+        pageId: booking.bookingPageId,
         paymentStatus: 'paid',
+        paidAt: new Date(),
+        ...(meetingLink ? { meetingLink } : {}),
+        actor: { actorType: 'webhook', source: 'stripe' },
       });
+
+      // Confirmation emails are enqueued by updateBookingRecord only after
+      // conference creation has completed.
+
+
     }
 
     if (event.type === 'payment_intent.payment_failed') {
@@ -204,27 +183,46 @@ export async function POST(req: Request) {
         : null;
 
       if (bookingId) {
-        await db.update(bookings)
-          .set({ status: 'cancelled', paymentStatus: 'free', cancelledAt: new Date(), updatedAt: new Date() })
-          .where(eq(bookings.id, bookingId));
+        const [booking] = await db.select({
+          id: bookings.id,
+          bookingPageId: bookings.bookingPageId,
+          paymentStatus: bookings.paymentStatus,
+          status: bookings.status,
+        }).from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+        if (booking && booking.paymentStatus === 'pending' && booking.status === 'confirmed') {
+          await updateBookingRecord({
+            bookingId: booking.id,
+            pageId: booking.bookingPageId,
+            status: 'cancelled',
+            paymentStatus: 'free',
+            actor: { actorType: 'webhook', source: 'stripe' },
+          });
+        }
       }
     }
 
     if (event.type === 'charge.refunded') {
       const charge = event.data.object as {
-        payment_intent: string;
+        payment_intent: string | null;
+        amount: number;
+        amount_refunded: number;
         metadata?: { type?: string; bookingId?: string };
       };
 
-      // Try to find booking by payment intent ID
+      // A charge.refunded event also fires for partial refunds. The current
+      // booking schema has no partial-refund state, so preserve paid until
+      // Stripe confirms that the cumulative refunded amount covers the charge.
       const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
-      if (piId) {
+      if (piId && charge.amount_refunded >= charge.amount) {
         const [booking] = await db.select().from(bookings)
           .where(eq(bookings.stripePaymentIntentId, piId)).limit(1);
         if (booking) {
-          await db.update(bookings)
-            .set({ paymentStatus: 'refunded', updatedAt: new Date() })
-            .where(eq(bookings.id, booking.id));
+          await updateBookingRecord({
+            bookingId: booking.id,
+            pageId: booking.bookingPageId,
+            paymentStatus: 'refunded',
+            actor: { actorType: 'webhook', source: 'stripe' },
+          });
         }
       }
     }

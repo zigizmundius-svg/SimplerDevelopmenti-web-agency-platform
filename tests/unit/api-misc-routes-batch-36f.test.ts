@@ -25,7 +25,8 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 const resolveClientSiteMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
 }));
 
@@ -33,7 +34,8 @@ vi.mock('@/lib/portal-client', () => ({
 const authorizePortalMock = vi.fn();
 // resolveStoreSite — used by [categoryId]/route.ts to resolve a site via entitlement check
 const resolveStoreSiteMock = vi.fn();
-vi.mock('@/lib/portal-auth', () => ({
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
   authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
   isAuthError: (r: unknown) =>
     Boolean(r && typeof r === 'object' && 'response' in (r as Record<string, unknown>)),
@@ -94,6 +96,7 @@ vi.mock('@/lib/db/schema', () => {
     oauthAccessTokens: wrap('oauthAccessTokens'),
     oauthClients: wrap('oauthClients'),
     portalApiKeys: wrap('portalApiKeys'),
+    agentActionLog: wrap('agentActionLog'),
   }, { has: (t, p) => (p in t) || !(p === "then" || p === "__esModule" || p === "default" || typeof p !== "string"), get: (t, p) => (p in t) ? t[p] : ((p === "then" || p === "__esModule" || p === "default" || typeof p !== "string") ? undefined : new Proxy({ __table: String(p) }, { get: (_x, c) => c === "__table" ? String(p) : (typeof c === "string" ? { __col: c, __table: String(p) } : undefined) })) });
 });
 
@@ -1000,17 +1003,14 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
     expect((await res.json()).success).toBe(false);
   });
 
-  it('accepts the x-vercel-cron header without a bearer token', async () => {
+  it('rejects forged the x-vercel-cron header without a bearer token', async () => {
+    process.env.CRON_SECRET = 'shh';
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.retentionDays).toBe(90);
-    expect(body.data.clientsScanned).toBe(0);
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -1038,10 +1038,11 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   it('fans out across every tenant and accumulates per-client counts', async () => {
+    process.env.CRON_SECRET = 'shh';
     state.clients.push({ id: 1 });
     state.clients.push({ id: 2 });
     state.clients.push({ id: 3 });
@@ -1053,7 +1054,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
 
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1071,6 +1072,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
   });
 
   it("isolates a single tenant's failure so the sweep continues", async () => {
+    process.env.CRON_SECRET = 'shh';
     state.clients.push({ id: 100 });
     state.clients.push({ id: 200 });
     state.clients.push({ id: 300 });
@@ -1084,7 +1086,7 @@ describe('GET /api/cron/brain-empty-old-trash', () => {
 
     const res = await cronMod.GET(
       new Request('http://x/api/cron/brain-empty-old-trash', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortal, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import {
   crmContacts,
@@ -13,10 +12,13 @@ import { and, eq, desc, sql } from 'drizzle-orm';
 function escapeCsvField(value: unknown): string {
   if (value == null) return '';
   const str = String(value);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return '"' + str.replace(/"/g, '""') + '"';
+  // Prevent spreadsheet formula execution when exported fields begin with a
+  // formula marker (including after leading whitespace).
+  const safe = /^\s*[=+\-@]/.test(str) ? `'${str}` : str;
+  if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
+    return '"' + safe.replace(/"/g, '""') + '"';
   }
-  return str;
+  return safe;
 }
 
 function toCsv(headers: string[], rows: unknown[][]): string {
@@ -28,20 +30,11 @@ function toCsv(headers: string[], rows: unknown[][]): string {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id)
-    return NextResponse.json(
-      { success: false, message: 'Unauthorized' },
-      { status: 401 }
-    );
-
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client)
-    return NextResponse.json(
-      { success: false, message: 'Client not found' },
-      { status: 404 }
-    );
+  // Exports expose tenant CRM data; require the same subscription gate as
+  // other CRM reads, while preserving viewer-level read access.
+  const authorization = await authorizePortal({ action: 'read', requireService: 'crm' });
+  if (isAuthError(authorization)) return authorization.response;
+  const { client } = authorization;
 
   const url = req.nextUrl;
   const entityType = url.searchParams.get('entityType');

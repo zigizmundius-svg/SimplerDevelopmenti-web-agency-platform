@@ -112,6 +112,20 @@ let insertReturnQueue: Array<Array<Record<string, unknown>>> = [];
 let updateReturnQueue: Array<Array<Record<string, unknown>>> = [];
 const insertCalls: InsertCall[] = [];
 const updateCalls: UpdateCall[] = [];
+const updateBookingRecordMock = vi.fn(async (input: Record<string, unknown>) => {
+  const patch = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+  patch.updatedAt = new Date();
+  if (input.status === 'cancelled') patch.cancelledAt = new Date();
+  const row = { id: Number(input.bookingId ?? 9), ...patch };
+  updateCalls.push({ table: 'bookings', patch, filter: null, returnedRows: [row] });
+  return row;
+});
+vi.mock('@/lib/booking/service', () => ({
+  updateBookingRecord: (...args: unknown[]) => updateBookingRecordMock(...args),
+}));
+vi.mock('@/lib/booking/post-create', () => ({
+  publishBookingCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 
 function shiftNext(): Array<Record<string, unknown>> {
   return selectQueue.shift() ?? [];
@@ -256,6 +270,7 @@ beforeEach(() => {
   getPortalClientMock.mockReset();
   authorizePortalMock.mockReset();
   stripeRefundsCreateMock.mockReset();
+  updateBookingRecordMock.mockClear();
 });
 
 // ===========================================================================
@@ -758,9 +773,9 @@ describe('POST /api/portal/tools/booking/[id]/bookings/[bookingId]/refund', () =
       payment_intent: 'pi_part',
       amount: 300,
     });
-    expect(updateCalls[0].patch.paymentStatus).toBe('refunded');
-    expect(updateCalls[0].patch.status).toBe('confirmed'); // unchanged
-    expect(updateCalls[0].patch.cancelledAt).toBeNull();
+    expect(updateCalls[0].patch.paymentStatus).toBe('paid'); // partial refunds do not change payment status
+    expect(updateCalls[0].patch).not.toHaveProperty('status'); // DB status remains confirmed
+    expect(updateCalls[0].patch).not.toHaveProperty('cancelledAt');
   });
 
   it('treats amount >= total as a full refund and marks the booking cancelled', async () => {
@@ -945,10 +960,10 @@ describe('PUT /api/portal/tools/booking/[id]/bookings/[bookingId]', () => {
     selectQueue.push([{ id: 9 }]);
     updateReturnQueue.push([{ id: 9 }]);
     const res = await bookingDetailRoute.PUT(
-      makeJsonReq('http://x/api/portal/tools/booking/1/bookings/9', 'PUT', { assignedTo: 'me@x' }),
+      makeJsonReq('http://x/api/portal/tools/booking/1/bookings/9', 'PUT', { assignedTo: 7 }),
       { params: Promise.resolve({ id: '1', bookingId: '9' }) },
     );
     expect(res.status).toBe(200);
-    expect(updateCalls[0].patch.assignedTo).toBe('me@x');
+    expect(updateCalls[0].patch.assignedTo).toBe(7);
   });
 });

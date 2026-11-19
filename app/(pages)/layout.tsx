@@ -1,34 +1,4 @@
 import type { ReactNode } from 'react';
-import { Orbitron, Raleway } from 'next/font/google';
-
-// The retro-future design system's two faces. Orbitron is the squared,
-// space-age display face that carries the "1950s idea of the future" read;
-// Raleway is the humanist body face that keeps long-form copy legible next
-// to it. app/globals.css names them as --retro-display / --retro-body.
-//
-// They are declared HERE, not in the root layout, and that placement is
-// load-bearing. next/font emits its <link rel=preload> from the font
-// manifest keyed by the declaring module — so a font declared in the root
-// layout is preloaded on EVERY route, including the public client sites
-// under app/sites, which use their own brand fonts and never resolve these.
-// That cost 53KB of woff2 per client-site page. Declaring them in this route
-// group's layout means only the marketing tree ever pulls them.
-//
-// preload stays TRUE (the next/font default): the marketing hero headline is
-// Orbitron, so deferring it means a visible swap on the first thing a
-// visitor sees. That trade-off is correct here and wrong for client sites,
-// which is exactly why the declaration moved rather than the flag changing.
-const orbitron = Orbitron({
-  variable: '--font-orbitron',
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800', '900'],
-});
-
-const raleway = Raleway({
-  variable: '--font-raleway',
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
-});
 
 /**
  * Marketing-pages layout (route group `(pages)`).
@@ -66,7 +36,7 @@ export default function MarketingPagesLayout({ children }: { children: ReactNode
   // making every band's background theme-aware first.
   return (
     <div
-      className={`${orbitron.variable} ${raleway.variable} retro retro-paper force-light overflow-x-clip md:overflow-x-visible`}
+      className="retro retro-paper force-light overflow-x-clip md:overflow-x-visible"
     >
       {children}
     </div>

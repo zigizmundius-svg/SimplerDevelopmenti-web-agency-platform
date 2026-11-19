@@ -12,7 +12,7 @@
 
 import { db } from '@/lib/db';
 import { automationJobs } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 export interface AutomationEvent {
   event: string;        // e.g. 'booking.created', 'crm.deal.updated'
@@ -56,6 +56,65 @@ export async function runHandlers(event: AutomationEvent): Promise<void> {
   await Promise.all(handlers.map((h) => h(event)));
 }
 
+/**
+ * Dispatch an event that was already inserted into automation_jobs by the
+ * caller's domain transaction. The row is completed only after every handler
+ * succeeds; otherwise the existing retry cron will pick it up after GRACE_MS.
+ */
+export async function dispatchJournaledEvent(
+  jobId: number,
+  event: AutomationEvent,
+): Promise<void> {
+  // Claim the journal row before running handlers. The retry cron uses the
+  // same pending -> running transition, so only one path can dispatch a row
+  // at a time. The lease also lets the cron recover a process that crashes.
+  const leaseUntil = new Date(Date.now() + 10 * 60_000);
+  const [claimed] = await db
+    .update(automationJobs)
+    .set({ status: 'running', nextRetryAt: leaseUntil })
+    .where(and(eq(automationJobs.id, jobId), eq(automationJobs.status, 'pending')))
+    .returning({ id: automationJobs.id });
+
+  if (!claimed) return;
+
+  let allOk = true;
+  let firstError: unknown;
+  await Promise.all(
+    handlers.map((handler) =>
+      handler(event).catch((err) => {
+        allOk = false;
+        firstError ??= err;
+        console.error(`[automation] Handler error for ${event.event}:`, err);
+      }),
+    ),
+  );
+
+  // The lease timestamp is an ownership token: an expired/stale dispatcher
+  // cannot overwrite a row that the cron has already reclaimed.
+  const ownership = and(
+    eq(automationJobs.id, jobId),
+    eq(automationJobs.status, 'running'),
+    eq(automationJobs.nextRetryAt, leaseUntil),
+  );
+
+  if (allOk) {
+    await db
+      .update(automationJobs)
+      .set({ status: 'completed', processedAt: new Date(), nextRetryAt: null, error: null })
+      .where(ownership);
+  } else {
+    const message = firstError instanceof Error ? firstError.message : String(firstError ?? 'Automation handler failed');
+    await db
+      .update(automationJobs)
+      .set({
+        status: 'pending',
+        nextRetryAt: new Date(Date.now() + 60_000),
+        error: message,
+      })
+      .where(ownership);
+  }
+}
+
 async function dispatchWithJournal(event: AutomationEvent): Promise<void> {
   // Durable journal first — a single fast insert, far likelier to survive a
   // serverless cold-start than the full handler chain it backstops.
@@ -76,26 +135,12 @@ async function dispatchWithJournal(event: AutomationEvent): Promise<void> {
     console.error(`[automation] journal insert failed for ${event.event}:`, err);
   }
 
-  // In-process dispatch — unchanged behavior; each handler isolated so one
-  // failure doesn't sink the others.
-  let allOk = true;
-  await Promise.all(
-    handlers.map((h) =>
-      h(event).catch((err) => {
-        allOk = false;
-        console.error(`[automation] Handler error for ${event.event}:`, err);
-      }),
-    ),
-  );
-
-  // Mark done so the retry cron skips it. If the process died before reaching
-  // here, the row stays 'pending' and the cron re-runs the event (at-least-once).
-  if (jobId != null && allOk) {
-    await db
-      .update(automationJobs)
-      .set({ status: 'completed', processedAt: new Date() })
-      .where(eq(automationJobs.id, jobId))
-      .catch(() => {});
+  // Dispatch only after the durable row exists. If the process dies before
+  // completion, the retry cron will replay the pending row.
+  if (jobId != null) {
+    await dispatchJournaledEvent(jobId, event).catch((err) => {
+      console.error(`[automation] Failed to complete journaled event ${jobId}:`, err);
+    });
   }
 }
 

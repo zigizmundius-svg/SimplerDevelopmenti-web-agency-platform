@@ -1,35 +1,17 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { clientWebsites } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { publishSiteCustomCode } from '@/lib/sites/publish-custom-code';
-
-async function verifySite(siteIdRaw: string) {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return null;
-  const [site] = await db
-    .select()
-    .from(clientWebsites)
-    .where(and(eq(clientWebsites.id, parseInt(siteIdRaw)), eq(clientWebsites.clientId, client.id)))
-    .limit(1);
-  return site || null;
-}
 
 /**
  * Publishes the draft custom CSS/JS to live and clears the draft.
- * Mirrors MCP `sites_publish_custom_code`. The same `publishSiteCustomCode`
- * helper is intended to be reused by the MCP approvals `site:publish` case
- * in a follow-up commit.
+ * Mirrors MCP `sites_publish_custom_code`. Portal and MCP approvals share
+ * the same transactional publication helper.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
-  const site = await verifySite(siteId);
-  if (!site) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  const authorized = await authorizePortalSite({ siteId: parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorized)) return authorized.response;
+  const { site, client } = authorized;
 
   // Refuse no-op publishes so a stray button-click can't silently overwrite
   // live with identical values (also keeps `updatedAt` honest).
@@ -44,7 +26,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ siteId
     );
   }
 
-  const result = await publishSiteCustomCode(site.id);
+  let result: Awaited<ReturnType<typeof publishSiteCustomCode>>;
+  try {
+    result = await publishSiteCustomCode(site.id, client.id);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'No draft changes to publish') {
+      return NextResponse.json(
+        { success: false, message: 'No draft changes to publish.' },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   return NextResponse.json({
     success: true,

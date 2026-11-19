@@ -5,21 +5,112 @@
  */
 'use client';
 
+import { useState, type FormEvent } from 'react';
 import type { Booking, PageMember } from '../_lib/types';
 
 interface BookingsPanelProps {
+  pageId: string;
+  timezone: string;
+  bookingType: 'individual' | 'group';
+  price: number | null;
+  onRefresh: () => Promise<void>;
   bookingsList: Booking[];
   pageMembers: PageMember[];
   onCancel: (bookingId: number) => void;
   onReassign: (bookingId: number, userId: number | null) => void;
 }
 
+function zonedDateTimeToIso(value: string, timeZone: string): string {
+  const [datePart, timePart] = value.split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hour, minute] = timePart.split(':').map(Number);
+  const targetUtc = Date.UTC(year, month - 1, day, hour, minute);
+  let candidate = targetUtc;
+
+  // Resolve the wall-clock value in the booking page's IANA timezone.
+  for (let i = 0; i < 3; i++) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(candidate));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const representedUtc = Date.UTC(
+      Number(values.year), Number(values.month) - 1, Number(values.day),
+      Number(values.hour), Number(values.minute),
+    );
+    const difference = targetUtc - representedUtc;
+    candidate += difference;
+    if (difference === 0) break;
+  }
+  return new Date(candidate).toISOString();
+}
+
 export function BookingsPanel({
+  pageId,
+  timezone,
+  bookingType,
+  price,
+  onRefresh,
   bookingsList,
   pageMembers,
   onCancel,
   onReassign,
 }: BookingsPanelProps) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [startAt, setStartAt] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+  const [seats, setSeats] = useState(1);
+  const [paidOffline, setPaidOffline] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  async function createBooking(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreating(true);
+    setCreateError('');
+    try {
+      const response = await fetch(`/api/portal/tools/booking/${pageId}/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestName,
+          guestEmail,
+          guestPhone: guestPhone || null,
+          startTime: zonedDateTimeToIso(startAt, timezone),
+          assignedTo: assignedTo || null,
+          seats: bookingType === 'group' ? seats : undefined,
+          paidOffline,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        setCreateError(result.message || 'Could not create booking');
+        return;
+      }
+      setShowCreate(false);
+      setGuestName('');
+      setGuestEmail('');
+      setGuestPhone('');
+      setStartAt('');
+      setAssignedTo('');
+      setSeats(1);
+      setPaidOffline(false);
+      await onRefresh();
+    } catch {
+      setCreateError('Could not create booking. Check the date and time.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const now = new Date();
   const upcomingBookings = bookingsList
     .filter((b) => b.status === 'confirmed' && new Date(b.startTime) >= now)
@@ -32,12 +123,75 @@ export function BookingsPanel({
     <div className="space-y-6">
       {/* Upcoming */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="material-icons text-primary">event_upcoming</span>
-          <h2 className="text-sm font-medium text-foreground">
-            Upcoming ({upcomingBookings.length})
-          </h2>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="material-icons text-primary">event_upcoming</span>
+            <h2 className="text-sm font-medium text-foreground">
+              Upcoming ({upcomingBookings.length})
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setShowCreate((value) => !value); setCreateError(''); }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
+          >
+            <span className="material-icons text-sm">add</span>
+            New booking
+          </button>
         </div>
+        {showCreate && (
+          <form onSubmit={createBooking} className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs text-muted-foreground space-y-1">
+                Guest name
+                <input required value={guestName} onChange={(e) => setGuestName(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+              </label>
+              <label className="text-xs text-muted-foreground space-y-1">
+                Guest email
+                <input required type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+              </label>
+              <label className="text-xs text-muted-foreground space-y-1">
+                Phone (optional)
+                <input value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+              </label>
+              <label className="text-xs text-muted-foreground space-y-1">
+                Appointment time ({timezone})
+                <input required type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+              </label>
+              {bookingType === 'group' && (
+                <label className="text-xs text-muted-foreground space-y-1">
+                  Seats
+                  <input required type="number" min={1} max={100} value={seats} onChange={(e) => setSeats(Math.max(1, Number(e.target.value) || 1))} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" />
+                </label>
+              )}
+              {pageMembers.some((member) => member.active) && (
+                <label className="text-xs text-muted-foreground space-y-1">
+                  Staff member
+                  <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">
+                    <option value="">Unassigned</option>
+                    {pageMembers.filter((member) => member.active).map((member) => (
+                      <option key={member.userId} value={member.userId}>{member.displayName || member.userName}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">The appointment time is interpreted in {timezone}. Paid services remain pending unless you mark an offline payment as received.</p>
+            {price != null && price > 0 && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" checked={paidOffline} onChange={(e) => setPaidOffline(e.target.checked)} />
+                Payment received outside the platform
+              </label>
+            )}
+            {createError && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{createError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowCreate(false)} className="px-3 py-2 rounded-lg border border-border text-xs text-muted-foreground">Cancel</button>
+              <button type="submit" disabled={creating} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">
+                {creating ? 'Creating…' : 'Create booking'}
+              </button>
+            </div>
+          </form>
+        )}
         {upcomingBookings.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">No upcoming bookings</p>
         ) : (

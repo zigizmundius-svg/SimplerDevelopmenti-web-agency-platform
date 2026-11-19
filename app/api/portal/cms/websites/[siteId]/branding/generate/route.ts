@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { complete } from '@/lib/ai/llm';
 import { resolveClientApiKey } from '@/lib/ai/resolve-client-key';
@@ -12,6 +13,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ siteId:
 
   const { siteId: siteIdRaw } = await params;
   const siteId = parseInt(siteIdRaw, 10);
+  if (!Number.isSafeInteger(siteId) || siteId <= 0) {
+    return NextResponse.json({ success: false, message: 'Invalid siteId' }, { status: 400 });
+  }
+  const authorization = await authorizePortalSite({ siteId, action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   if (!Number.isFinite(siteId)) {
     return NextResponse.json({ success: false, message: 'Invalid siteId' }, { status: 400 });
   }

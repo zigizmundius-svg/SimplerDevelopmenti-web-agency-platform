@@ -312,7 +312,7 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
   });
 
   it('skips dup rows, notifies owner fallback, and formats body lines', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const lastActivity = new Date('2026-01-01T12:00:00Z');
 
     dbExecuteMock.mockResolvedValueOnce({
@@ -373,7 +373,7 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
     const { GET } = await import('@/app/api/cron/stale-crm-deals/route');
     const res = await GET(
       new Request('http://x/api/cron/stale-crm-deals', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -424,7 +424,7 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
   });
 
   it('accepts a bare array (non-wrapped) return shape from db.execute', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     dbExecuteMock.mockResolvedValueOnce([
       {
         dealId: 100,
@@ -442,7 +442,7 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
     const { GET } = await import('@/app/api/cron/stale-crm-deals/route');
     const res = await GET(
       new Request('http://x/api/cron/stale-crm-deals', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -451,7 +451,7 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
     expect(json.data.notified).toBe(1);
   });
 
-  it('returns 200 with Vercel cron header when no CRON_SECRET is configured', async () => {
+  it('rejects forged with Vercel cron header when no CRON_SECRET is configured', async () => {
     delete process.env.CRON_SECRET;
     dbExecuteMock.mockResolvedValueOnce({ rows: [] });
 
@@ -461,7 +461,7 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   it('rejects a wrong bearer token when CRON_SECRET is set', async () => {
@@ -476,14 +476,14 @@ describe('GET /api/cron/stale-crm-deals — candidate loop', () => {
   });
 
   it('handles a null .rows shape gracefully', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     // simulate `{ rows: undefined }` from the driver — the route coalesces to []
     dbExecuteMock.mockResolvedValueOnce({});
 
     const { GET } = await import('@/app/api/cron/stale-crm-deals/route');
     const res = await GET(
       new Request('http://x/api/cron/stale-crm-deals', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

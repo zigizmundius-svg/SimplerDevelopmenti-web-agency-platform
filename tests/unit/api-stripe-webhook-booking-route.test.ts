@@ -44,6 +44,11 @@ const dbState: DbState = {
   updates: [],
 };
 
+const updateBookingRecordMock = vi.fn(async (input: Record<string, unknown>) => {
+  dbState.updates.push({ table: 'bookings', values: input });
+  return {};
+});
+
 interface EmailMockState {
   sendGuestConfirmation: ReturnType<typeof vi.fn>;
   sendHostNotification: ReturnType<typeof vi.fn>;
@@ -153,6 +158,10 @@ vi.mock('@/lib/db', () => {
   };
 });
 
+vi.mock('@/lib/booking/service', () => ({
+  updateBookingRecord: (input: Record<string, unknown>) => updateBookingRecordMock(input),
+}));
+
 vi.mock('@/lib/email/booking-emails', () => ({
   sendGuestConfirmation: (...args: unknown[]) => emailState.sendGuestConfirmation(...args),
   sendHostNotification: (...args: unknown[]) => emailState.sendHostNotification(...args),
@@ -215,6 +224,7 @@ beforeEach(() => {
   dbState.selectQueue = [];
   dbState.inserts = [];
   dbState.updates = [];
+  updateBookingRecordMock.mockClear();
   stripeState.constructEvent.mockReset();
   emailState.sendGuestConfirmation.mockReset();
   emailState.sendGuestConfirmation.mockResolvedValue(undefined);
@@ -426,7 +436,7 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
   });
 
-  it('happy-path: marks paid, sends guest + host emails (no conference/calendar)', async () => {
+  it('marks paid without sending emails inline (outbox handles delivery)', async () => {
     stripeState.constructEvent.mockReturnValue({
       type: 'payment_intent.succeeded',
       data: { object: { id: 'pi_ok', metadata: { type: 'booking', bookingId: '100' } } },
@@ -456,15 +466,11 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     expect(meetingState.createCalendarEvent).not.toHaveBeenCalled();
     expect(meetingState.createZoomMeeting).not.toHaveBeenCalled();
 
-    expect(emailState.sendGuestConfirmation).toHaveBeenCalledTimes(1);
-    const guestArg = emailState.sendGuestConfirmation.mock.calls[0][0];
-    expect(guestArg.guestEmail).toBe('guest@example.com');
-    expect(guestArg.pageTitle).toBe('Discovery Call');
-    expect(guestArg.timezone).toBe('America/Chicago'); // booking.timezone wins
-    expect(guestArg.meetingLink).toBeNull();
-
-    expect(emailState.sendHostNotification).toHaveBeenCalledTimes(1);
-    expect(emailState.sendHostNotification.mock.calls[0][0]).toBe('host@example.com');
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 100, paymentStatus: 'paid',
+    }));
+    expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
+    expect(emailState.sendHostNotification).not.toHaveBeenCalled();
   });
 
   it('falls back to page timezone when booking has no timezone', async () => {
@@ -473,13 +479,14 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
       data: { object: { id: 'pi_tz', metadata: { type: 'booking', bookingId: '100' } } },
     });
     dbState.selectQueue.push([{ ...DEFAULT_BOOKING, timezone: null }]);
-    dbState.selectQueue.push([DEFAULT_PAGE]);
+    dbState.selectQueue.push([{ ...DEFAULT_PAGE, conferenceType: 'google_meet' }]);
     dbState.selectQueue.push([{ userId: 555 }]);
     dbState.selectQueue.push([{ email: 'host@example.com' }]);
     const { POST } = await import('@/app/api/stripe/webhook/booking/route');
     const res = await POST(makeRequest('{}'));
     expect(res.status).toBe(200);
-    expect(emailState.sendGuestConfirmation.mock.calls[0][0].timezone).toBe('America/New_York');
+    expect(meetingState.createCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'America/New_York' }));
+    expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
   });
 
   it('creates a Google Meet calendar event and stores returned meetingLink', async () => {
@@ -506,7 +513,13 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
         (u.values as { meetingLink?: string }).meetingLink === 'https://meet.example/abc',
     );
     expect(linkUpdate).toBeDefined();
-    expect(emailState.sendGuestConfirmation.mock.calls[0][0].meetingLink).toBe('https://meet.example/abc');
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      paymentStatus: 'paid',
+      meetingLink: 'https://meet.example/abc',
+    }));
+    expect(meetingState.createCalendarEvent.mock.invocationCallOrder[0])
+      .toBeLessThan(updateBookingRecordMock.mock.invocationCallOrder[0]);
+    expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
   });
 
   it('calls createCalendarEvent (no Meet) when only googleCalendarSync is true', async () => {
@@ -554,6 +567,23 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     expect(linkUpdate).toBeDefined();
   });
 
+  it('reuses an existing legacy Zoom link on a Stripe webhook retry', async () => {
+    stripeState.constructEvent.mockReturnValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_zoom_retry', metadata: { type: 'booking', bookingId: '100' } } },
+    });
+    dbState.selectQueue.push([{ ...DEFAULT_BOOKING, meetingLink: 'https://zoom.us/j/123' }]);
+    dbState.selectQueue.push([{ ...DEFAULT_PAGE, conferenceType: 'zoom' }]);
+    const { POST } = await import('@/app/api/stripe/webhook/booking/route');
+    const res = await POST(makeRequest('{}'));
+    expect(res.status).toBe(200);
+    expect(meetingState.createZoomMeeting).not.toHaveBeenCalled();
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      paymentStatus: 'paid',
+      meetingLink: 'https://zoom.us/j/123',
+    }));
+  });
+
   it('also syncs the Zoom meeting to Google Calendar when googleCalendarSync=true', async () => {
     stripeState.constructEvent.mockReturnValue({
       type: 'payment_intent.succeeded',
@@ -591,7 +621,7 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     const { POST } = await import('@/app/api/stripe/webhook/booking/route');
     const res = await POST(makeRequest('{}'));
     expect(res.status).toBe(200);
-    expect(emailState.sendGuestConfirmation).toHaveBeenCalledTimes(1);
+    expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
     expect(emailState.sendHostNotification).not.toHaveBeenCalled();
   });
 
@@ -610,7 +640,7 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     expect(emailState.sendHostNotification).not.toHaveBeenCalled();
   });
 
-  it('swallows errors from sendGuestConfirmation (.catch)', async () => {
+  it('does not deliver booking emails inline from the Stripe webhook', async () => {
     stripeState.constructEvent.mockReturnValue({
       type: 'payment_intent.succeeded',
       data: { object: { id: 'pi_emailfail', metadata: { type: 'booking', bookingId: '100' } } },
@@ -619,10 +649,11 @@ describe('POST /api/stripe/webhook/booking — payment_intent.succeeded (booking
     dbState.selectQueue.push([DEFAULT_PAGE]);
     dbState.selectQueue.push([{ userId: 555 }]);
     dbState.selectQueue.push([{ email: 'host@example.com' }]);
-    emailState.sendGuestConfirmation.mockRejectedValueOnce(new Error('SMTP down'));
     const { POST } = await import('@/app/api/stripe/webhook/booking/route');
     const res = await POST(makeRequest('{}'));
     expect(res.status).toBe(200);
+    expect(emailState.sendGuestConfirmation).not.toHaveBeenCalled();
+    expect(emailState.sendHostNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -643,15 +674,16 @@ describe('POST /api/stripe/webhook/booking — payment_intent.payment_failed', (
       type: 'payment_intent.payment_failed',
       data: { object: { id: 'pi_fail', metadata: { type: 'booking', bookingId: '100' } } },
     });
+    dbState.selectQueue.push([{ ...DEFAULT_BOOKING, paymentStatus: 'pending', status: 'confirmed' }]);
     const { POST } = await import('@/app/api/stripe/webhook/booking/route');
     const res = await POST(makeRequest('{}'));
     expect(res.status).toBe(200);
-    const cancelled = dbState.updates.find((u) => u.table === 'bookings');
-    expect(cancelled).toBeDefined();
-    const v = cancelled!.values as { status: string; paymentStatus: string; cancelledAt: Date };
-    expect(v.status).toBe('cancelled');
-    expect(v.paymentStatus).toBe('free');
-    expect(v.cancelledAt).toBeInstanceOf(Date);
+    expect(updateBookingRecordMock).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 100,
+      status: 'cancelled',
+      paymentStatus: 'free',
+      actor: expect.objectContaining({ source: 'stripe' }),
+    }));
   });
 
   it('does nothing when bookingId is missing', async () => {
@@ -693,7 +725,7 @@ describe('POST /api/stripe/webhook/booking — charge.refunded', () => {
   it('marks the booking refunded when matched by PI', async () => {
     stripeState.constructEvent.mockReturnValue({
       type: 'charge.refunded',
-      data: { object: { payment_intent: 'pi_charge', metadata: {} } },
+      data: { object: { payment_intent: 'pi_charge', amount: 1000, amount_refunded: 1000, metadata: {} } },
     });
     dbState.selectQueue.push([DEFAULT_BOOKING]);
     const { POST } = await import('@/app/api/stripe/webhook/booking/route');

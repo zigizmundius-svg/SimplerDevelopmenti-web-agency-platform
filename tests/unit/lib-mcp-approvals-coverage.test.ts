@@ -110,6 +110,7 @@ interface DbMock {
   insert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
 }
 
 const chain: Record<string, unknown> = {};
@@ -125,6 +126,7 @@ function resetChain() {
     limit: passthrough,
     innerJoin: passthrough,
     returning: vi.fn(async () => []),
+    for: passthrough,
   });
 }
 
@@ -133,6 +135,7 @@ const dbMock: DbMock = {
   insert: vi.fn(() => chain),
   update: vi.fn(() => chain),
   delete: vi.fn(() => chain),
+  transaction: vi.fn(async (callback: (tx: DbMock) => unknown) => callback(dbMock)),
 };
 
 vi.mock('@/lib/db', () => ({ db: dbMock }));
@@ -181,6 +184,7 @@ function queueSelect(results: unknown[][]) {
       orderBy: pass,
       innerJoin: pass,
       limit: vi.fn(async () => seq.shift() ?? []),
+      for: pass,
     });
     return localChain;
   });
@@ -629,7 +633,7 @@ describe('applyPendingChange — site:update', () => {
     expect(p.name).toBeUndefined();
   });
 
-  it('clears draftCustomCss when customCss is empty string', async () => {
+  it('preserves an empty draftCustomCss so publishing can clear live CSS', async () => {
     queueSelect([[{ id: 5 }]]);
     let patch: Record<string, unknown> | null = null;
     dbMock.update.mockImplementation(() => {
@@ -648,7 +652,7 @@ describe('applyPendingChange — site:update', () => {
       payload: { customCss: '' },
     });
     await applyPendingChange(change as never, 10, 1);
-    expect((patch as Record<string, unknown>).draftCustomCss).toBeNull();
+    expect((patch as Record<string, unknown>).draftCustomCss).toBe('');
   });
 
   it('writes draft JS when customJs is in payload', async () => {
@@ -756,8 +760,8 @@ describe('applyPendingChange — site:publish', () => {
   });
 
   it('resolves id from payload.id when entityId is absent', async () => {
-    queueSelect([[{ id: 5, draftCustomCss: null, draftCustomJs: null }]]);
-    queueUpdateReturning([{ id: 5 }]);
+    queueSelect([[{ id: 5, draftCustomCss: '.draft { color: red; }', draftCustomJs: null }]]);
+    queueUpdateReturning([{ id: 5, customCss: '.draft { color: red; }', customJs: '' }]);
     const change = mkChange({
       entityType: 'site',
       operation: 'publish',
@@ -765,7 +769,7 @@ describe('applyPendingChange — site:publish', () => {
       payload: { id: 5 },
     });
     const r = await applyPendingChange(change as never, 10, 1);
-    expect(r).toEqual({ id: 5 });
+    expect(r).toEqual({ customCss: '.draft { color: red; }', customJs: '' });
   });
 });
 

@@ -105,19 +105,26 @@ export function readImpersonationCookie(rawToken: string | undefined | null): Pa
 }
 
 /**
- * Returns the target clientId if (a) the cookie verifies and (b) the caller
- * is a staff user. Returns null otherwise.
+ * Returns the target clientId only when the cookie verifies, the caller has a
+ * staff role, and the signed staffUserId matches the authenticated session user.
+ * Returns null otherwise.
  *
- * This is the single security boundary for the read path. Non-staff users
- * never see a non-null result regardless of cookie state.
+ * This is the single security boundary for the read path. Neither non-staff
+ * users nor a different staff identity can reuse a copied impersonation cookie.
  */
 export function getImpersonatedClientIdFromToken(
   rawToken: string | undefined | null,
   userRole: string | null | undefined,
+  expectedStaffUserId: number,
 ): number | null {
-  if (!isStaffRole(userRole)) return null;
+  if (!isStaffRole(userRole) || !Number.isSafeInteger(expectedStaffUserId) || expectedStaffUserId <= 0) {
+    return null;
+  }
   const payload = verify(rawToken);
-  return payload?.clientId ?? null;
+  // The signed cookie is a credential for one staff identity, not merely for
+  // anyone who happens to have a staff role in the same browser.
+  if (!payload || payload.staffUserId !== expectedStaffUserId) return null;
+  return payload.clientId;
 }
 
 /** Cookie attributes for setting/clearing in route handlers. */

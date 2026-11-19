@@ -77,8 +77,10 @@ const authMock = vi.fn();
 vi.mock('@/lib/auth', () => ({ auth: () => authMock() }));
 
 const getPortalClientMock = vi.fn();
+const getPortalRoleMock = vi.fn();
 vi.mock('@/lib/portal-client', () => ({
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
+  getPortalRole: (...args: unknown[]) => getPortalRoleMock(...args),
 }));
 
 vi.mock('next/server', () => ({
@@ -128,6 +130,8 @@ describe("authorizePortal — OAuth scope enforcement (AUTH79-011, log-only vs A
     resolvePortalFromCurrentRequestMock.mockReset();
     authMock.mockReset();
     getPortalClientMock.mockReset();
+    getPortalRoleMock.mockReset();
+    getPortalRoleMock.mockResolvedValue('owner');
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 

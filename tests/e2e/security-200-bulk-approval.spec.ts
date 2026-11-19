@@ -657,9 +657,18 @@ test.describe('Bulk Approval — approval-digest cron @security @cron', () => {
     expect(bogusBearer.status()).toBe(401);
   });
 
-  test('accepts the Vercel cron header and returns the summary shape', async ({ request }) => {
+  test('rejects a forged Vercel cron marker', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/cron/approval-digest`, {
       headers: { 'x-vercel-cron': '1' },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('accepts a valid cron bearer secret and returns the summary shape', async ({ request }) => {
+    const cronSecret = process.env.CRON_SECRET;
+    test.skip(!cronSecret, 'CRON_SECRET not set — skipping authenticated cron assertion');
+    const res = await request.get(`${BASE_URL}/api/cron/approval-digest`, {
+      headers: { Authorization: `Bearer ${cronSecret}` },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
@@ -741,8 +750,10 @@ test.describe('Bulk Approval — approval-digest cron @security @cron', () => {
     //    route then no-ops safely (`skipped: 'emails disabled'`) without
     //    touching any rows. Assert the shape unconditionally, and the
     //    positive counts only when email sending is actually wired up.
+    const cronSecret = process.env.CRON_SECRET;
+    test.skip(!cronSecret, 'CRON_SECRET not set — skipping authenticated digest delivery assertion');
     const cronRes = await request.get(`${BASE_URL}/api/cron/approval-digest`, {
-      headers: { 'x-vercel-cron': '1' },
+      headers: { Authorization: `Bearer ${cronSecret}` },
     });
     expect(cronRes.status()).toBe(200);
     const cronBody = await cronRes.json();

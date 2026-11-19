@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientWebsites } from '@/lib/db/schema';
@@ -20,6 +21,8 @@ export async function PUT(
   if (!client) return NextResponse.json({ success: false, message: 'Client not found' }, { status: 404 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const parsed = parseSiteIdParam(siteId);
   if (!parsed.ok) return parsed.response;
   const siteIdNum = parsed.value;
@@ -135,6 +138,8 @@ export async function DELETE(
   if (!client) return NextResponse.json({ success: false, message: 'Client not found' }, { status: 404 });
 
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'owner', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const parsed = parseSiteIdParam(siteId);
   if (!parsed.ok) return parsed.response;
   const siteIdNum = parsed.value;

@@ -38,7 +38,7 @@ export const getPortalClient = cache(async (userId: number, preferredClientId?: 
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      const targetId = getImpersonatedClientIdFromToken(tokenVal, me?.role);
+      const targetId = getImpersonatedClientIdFromToken(tokenVal, me?.role, userId);
       if (targetId != null) {
         const [target] = await db
           .select()

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
@@ -27,6 +28,8 @@ async function verifyTypeAccess(siteIdRaw: string, typeIdRaw: string) {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   return NextResponse.json({
@@ -37,6 +40,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
 
 export async function PUT(req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'admin', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 

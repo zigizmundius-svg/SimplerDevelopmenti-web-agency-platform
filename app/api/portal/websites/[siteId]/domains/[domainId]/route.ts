@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { resolvePortalSite } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { clientWebsites, websiteDomains } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -11,26 +10,21 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ siteId: string; domainId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
   const { siteId, domainId } = await params;
-  const userId = parseInt(session.user.id, 10);
-  const resolved = await resolvePortalSite(userId, parseInt(siteId));
-  if (!resolved) return NextResponse.json({ success: false, message: 'Website not found' }, { status: 404 });
-  const { site } = resolved;
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
+  const { site } = authorized;
 
-  const [domainRecord] = await db
-    .select()
-    .from(websiteDomains)
-    .where(and(eq(websiteDomains.id, parseInt(domainId)), eq(websiteDomains.websiteId, site.id)))
+  const [domainRecord] = await db.select().from(websiteDomains)
+    .where(and(eq(websiteDomains.id, parseInt(domainId, 10)), eq(websiteDomains.websiteId, site.id)))
     .limit(1);
-
   if (!domainRecord) return NextResponse.json({ success: false, message: 'Domain not found' }, { status: 404 });
 
   try {
-    // Remove from Vercel (platform project for shared-hosted sites, dedicated project otherwise).
-    // Wrap in try/catch so a stale Vercel state doesn't block DB cleanup.
     try {
       const projectId = resolveDomainProjectId(site.vercelProjectId);
       await removeDomain(projectId, domainRecord.domain);
@@ -38,18 +32,12 @@ export async function DELETE(
       // Non-fatal — domain may already be gone or platform project unconfigured.
     }
 
-    // Delete from our table
     await db.delete(websiteDomains).where(eq(websiteDomains.id, domainRecord.id));
-
-    // If this was the primary domain, promote the next one or clear the legacy column
     if (domainRecord.isPrimary) {
-      const [next] = await db
-        .select()
-        .from(websiteDomains)
+      const [next] = await db.select().from(websiteDomains)
         .where(eq(websiteDomains.websiteId, site.id))
         .orderBy(websiteDomains.createdAt)
         .limit(1);
-
       if (next) {
         await db.update(websiteDomains).set({ isPrimary: true }).where(eq(websiteDomains.id, next.id));
         await db.update(clientWebsites).set({ domain: next.domain, updatedAt: new Date() }).where(eq(clientWebsites.id, site.id));
@@ -70,36 +58,28 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ siteId: string; domainId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
   const { siteId, domainId } = await params;
-  const userId = parseInt(session.user.id, 10);
-  const resolved = await resolvePortalSite(userId, parseInt(siteId));
-  if (!resolved) return NextResponse.json({ success: false, message: 'Website not found' }, { status: 404 });
-  const { site } = resolved;
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
+  const { site } = authorized;
 
-  const [domainRecord] = await db
-    .select()
-    .from(websiteDomains)
-    .where(and(eq(websiteDomains.id, parseInt(domainId)), eq(websiteDomains.websiteId, site.id)))
+  const [domainRecord] = await db.select().from(websiteDomains)
+    .where(and(eq(websiteDomains.id, parseInt(domainId, 10)), eq(websiteDomains.websiteId, site.id)))
     .limit(1);
-
   if (!domainRecord) return NextResponse.json({ success: false, message: 'Domain not found' }, { status: 404 });
 
   const body = await req.json();
-
   if (body.isPrimary) {
-    // Unset all other primaries first
     await db.update(websiteDomains)
       .set({ isPrimary: false, updatedAt: new Date() })
       .where(eq(websiteDomains.websiteId, site.id));
-
     await db.update(websiteDomains)
       .set({ isPrimary: true, updatedAt: new Date() })
       .where(eq(websiteDomains.id, domainRecord.id));
-
-    // Update legacy column
     await db.update(clientWebsites)
       .set({ domain: domainRecord.domain, updatedAt: new Date() })
       .where(eq(clientWebsites.id, site.id));

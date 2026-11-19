@@ -69,6 +69,10 @@ vi.mock('@/lib/db/schema', () => ({
   clients: {
     id: { name: 'id' },
   },
+  users: {
+    id: { name: 'id' },
+    active: { name: 'active' },
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -181,6 +185,22 @@ describe('lib/mcp-auth', () => {
       expect(ctx).toBeNull();
     });
 
+    it('returns null when the key owner has been deactivated', async () => {
+      selectResults.push([
+        {
+          id: 4,
+          userId: 11,
+          clientId: 100,
+          scopes: ['*'],
+          revokedAt: null,
+          expiresAt: null,
+        },
+      ]);
+      selectResults.push([]); // inactive or deleted user
+      const ctx = await resolvePortalApiKey(`${PORTAL_KEY_PREFIX}inactive-user`);
+      expect(ctx).toBeNull();
+    });
+
     it('returns null when the referenced client row is missing', async () => {
       selectResults.push([
         {
@@ -192,6 +212,7 @@ describe('lib/mcp-auth', () => {
           expiresAt: null,
         },
       ]);
+      selectResults.push([{ id: 11 }]); // active user
       selectResults.push([]); // clients lookup empty
       const ctx = await resolvePortalApiKey(`${PORTAL_KEY_PREFIX}noclient`);
       expect(ctx).toBeNull();
@@ -208,6 +229,7 @@ describe('lib/mcp-auth', () => {
       };
       const client = { id: 200, name: 'Acme' };
       selectResults.push([record]);
+      selectResults.push([{ id: 12 }]); // active user
       selectResults.push([client]);
 
       const ctx = await resolvePortalApiKey(`${PORTAL_KEY_PREFIX}good`);
@@ -231,6 +253,7 @@ describe('lib/mcp-auth', () => {
         expiresAt: null,
       };
       selectResults.push([record]);
+      selectResults.push([{ id: 13 }]); // active user
       selectResults.push([{ id: 201, name: 'Beta' }]);
 
       const ctx = await resolvePortalApiKey(`${PORTAL_KEY_PREFIX}nullscopes`);
@@ -281,6 +304,22 @@ describe('lib/mcp-auth', () => {
       expect(ctx).toBeNull();
     });
 
+    it('returns null when the OAuth token owner has been deactivated', async () => {
+      selectResults.push([
+        {
+          id: 12,
+          userId: 18,
+          clientId: 502,
+          scopes: ['*'],
+          revokedAt: null,
+          expiresAt: null,
+        },
+      ]);
+      selectResults.push([]); // inactive or deleted user
+      const ctx = await resolveOAuthToken(`${OAUTH_TOKEN_PREFIX}inactive-user`);
+      expect(ctx).toBeNull();
+    });
+
     it('returns null when the referenced client row is missing', async () => {
       selectResults.push([
         {
@@ -292,6 +331,7 @@ describe('lib/mcp-auth', () => {
           expiresAt: null,
         },
       ]);
+      selectResults.push([{ id: 15 }]); // active user
       selectResults.push([]);
       const ctx = await resolveOAuthToken(`${OAUTH_TOKEN_PREFIX}orphan`);
       expect(ctx).toBeNull();
@@ -308,6 +348,7 @@ describe('lib/mcp-auth', () => {
       };
       const client = { id: 500, name: 'Gamma' };
       selectResults.push([record]);
+      selectResults.push([{ id: 16 }]); // active user
       selectResults.push([client]);
 
       const ctx = await resolveOAuthToken(`${OAUTH_TOKEN_PREFIX}good`);
@@ -331,6 +372,7 @@ describe('lib/mcp-auth', () => {
           expiresAt: null,
         },
       ]);
+      selectResults.push([{ id: 17 }]); // active user
       selectResults.push([{ id: 501 }]);
       const ctx = await resolveOAuthToken(`${OAUTH_TOKEN_PREFIX}empty`);
       expect(ctx!.scopes).toEqual([]);
@@ -364,6 +406,7 @@ describe('lib/mcp-auth', () => {
         expiresAt: null,
       };
       selectResults.push([record]);
+      selectResults.push([{ id: 30 }]); // active user
       selectResults.push([{ id: 600 }]);
 
       const ctx = await resolvePortalFromRequest(
@@ -383,6 +426,7 @@ describe('lib/mcp-auth', () => {
         expiresAt: null,
       };
       selectResults.push([record]);
+      selectResults.push([{ id: 31 }]); // active user
       selectResults.push([{ id: 601 }]);
 
       const ctx = await resolvePortalFromRequest(

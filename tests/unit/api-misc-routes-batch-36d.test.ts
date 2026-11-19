@@ -26,13 +26,26 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 const getPortalClientMock = vi.fn();
-vi.mock('@/lib/portal-client', () => ({
+vi.mock('@/lib/portal-client', async (importOriginal) => ({
+  ...await importOriginal(),
   getPortalClient: (...args: unknown[]) => getPortalClientMock(...args),
 }));
 
 const authorizePortalMock = vi.fn();
-vi.mock('@/lib/portal-auth', () => ({
+vi.mock('@/lib/portal-auth', async (importOriginal) => ({
+  ...await importOriginal(),
   authorizePortal: (...args: unknown[]) => authorizePortalMock(...args),
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => {
+    const session = await authMock();
+    if (!session?.user?.id) return { response: new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }) };
+    const client = await getPortalClientMock();
+    if (client === null) return { response: new Response(JSON.stringify({ message: 'Client not found' }), { status: 404 }) };
+    const [site] = selectQueue.shift() ?? [];
+    if (!site || site.id !== siteId || site.clientId !== client.id) {
+      return { response: new Response(JSON.stringify({ message: 'Website not found' }), { status: 404 }) };
+    }
+    return { site, client, userId: Number(session.user.id), role: 'owner' };
+  },
   isAuthError: (r: unknown) =>
     typeof r === 'object' && r !== null && 'response' in (r as Record<string, unknown>),
 }));
@@ -743,13 +756,13 @@ describe('GET /api/portal/websites/[siteId]/environments', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data).toEqual(envRows);
-    expect(getPortalClientMock).toHaveBeenCalledWith(7);
+    expect(getPortalClientMock).toHaveBeenCalledOnce();
   });
 
   it('returns empty list when site exists but has no environments', async () => {
     authMock.mockResolvedValue(SESSION);
     getPortalClientMock.mockResolvedValue({ id: 42 });
-    selectQueue.push([{ id: 5 }]);
+    selectQueue.push([{ id: 5, clientId: 42 }]);
     selectQueue.push([]); // envs empty
 
     const res = await environmentsRoute.GET(makeReq('http://x/env'), {

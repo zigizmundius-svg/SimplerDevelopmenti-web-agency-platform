@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { getPortalClient } from '@/lib/portal-client';
 import { db } from '@/lib/db';
@@ -43,10 +44,28 @@ export async function PUT(
   { params }: { params: Promise<{ siteId: string; taxonomyId: string; termId: string }> },
 ) {
   const { siteId, taxonomyId, termId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const access = await verifyTermAccess(siteId, taxonomyId, termId);
   if (!access) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  if (access.taxonomy.websiteId !== access.site.id || access.taxonomy.builtIn) {
+    return NextResponse.json({ success: false, message: 'Global built-in taxonomies are read-only. Create a site-specific taxonomy to customize terms.' }, { status: 403 });
+  }
 
   const body = await req.json();
+
+  if (body.parentId !== undefined && body.parentId !== null) {
+    if (!Number.isSafeInteger(body.parentId) || body.parentId <= 0 || body.parentId === access.term.id) {
+      return NextResponse.json({ success: false, message: 'parentId must reference another term in this taxonomy.' }, { status: 400 });
+    }
+    const [parent] = await db.select({ id: taxonomyTerms.id })
+      .from(taxonomyTerms)
+      .where(and(eq(taxonomyTerms.id, body.parentId), eq(taxonomyTerms.taxonomyId, access.taxonomy.id)))
+      .limit(1);
+    if (!parent) {
+      return NextResponse.json({ success: false, message: 'parentId must reference a term in this taxonomy.' }, { status: 400 });
+    }
+  }
 
   const [updated] = await db
     .update(taxonomyTerms)
@@ -68,8 +87,13 @@ export async function DELETE(
   { params }: { params: Promise<{ siteId: string; taxonomyId: string; termId: string }> },
 ) {
   const { siteId, taxonomyId, termId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const access = await verifyTermAccess(siteId, taxonomyId, termId);
   if (!access) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+  if (access.taxonomy.websiteId !== access.site.id || access.taxonomy.builtIn) {
+    return NextResponse.json({ success: false, message: 'Global built-in taxonomies are read-only. Create a site-specific taxonomy to customize terms.' }, { status: 403 });
+  }
 
   await db.delete(taxonomyTerms).where(eq(taxonomyTerms.id, access.term.id));
   return NextResponse.json({ success: true });

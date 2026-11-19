@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 /**
  * Cron: materialize cards from due card_recurrences. Suggested schedule:
  * every 5 minutes (`*\/5 * * * *`) so a recurrence configured for 09:00 UTC
- * fires within minutes of the hour. Vercel cron header is honored;
+ * Cron authentication is Bearer-only via lib/cron-auth.ts.
  * otherwise expects `Authorization: Bearer ${CRON_SECRET}`.
  */
 async function _GET(req: Request) {

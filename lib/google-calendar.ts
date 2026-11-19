@@ -67,7 +67,13 @@ export async function createCalendarEvent(opts: {
   const calendar = google.calendar({ version: 'v3', auth: auth.oauth2Client });
 
   try {
+    // Google Calendar event IDs accept lowercase base32hex characters.
+    // Deriving the ID from the booking makes retries idempotent: if Google
+    // created the event but the process died before persisting googleEventId,
+    // the next attempt receives 409 and reads the already-created event.
+    const stableEventId = `b${opts.bookingId.toString(32)}`;
     const requestBody: Record<string, unknown> = {
+      id: stableEventId,
       summary: `${opts.title} — ${opts.guestName}`,
       description: opts.description || `Booking with ${opts.guestName} (${opts.guestEmail})`,
       start: {
@@ -93,20 +99,34 @@ export async function createCalendarEvent(opts: {
     if (opts.addGoogleMeet) {
       requestBody.conferenceData = {
         createRequest: {
-          requestId: `booking-${opts.bookingId}-${Date.now()}`,
+          requestId: `booking-${opts.bookingId}`,
           conferenceSolutionKey: { type: 'hangoutsMeet' },
         },
       };
     }
 
-    const event = await calendar.events.insert({
-      calendarId: auth.calendarId,
-      conferenceDataVersion: opts.addGoogleMeet ? 1 : 0,
-      requestBody,
-    });
+    let eventData: { id?: string | null; hangoutLink?: string | null };
+    try {
+      const created = await calendar.events.insert({
+        calendarId: auth.calendarId,
+        conferenceDataVersion: opts.addGoogleMeet ? 1 : 0,
+        requestBody,
+      });
+      eventData = created.data;
+    } catch (insertError) {
+      const error = insertError as { code?: number; response?: { status?: number } };
+      const status = error.code ?? error.response?.status;
+      if (status !== 409) throw insertError;
+      // The stable ID already exists, which is the expected retry path.
+      const existing = await calendar.events.get({
+        calendarId: auth.calendarId,
+        eventId: stableEventId,
+      });
+      eventData = existing.data;
+    }
 
-    const eventId = event.data.id;
-    const meetingLink = event.data.hangoutLink || null;
+    const eventId = eventData.id || stableEventId;
+    const meetingLink = eventData.hangoutLink || null;
 
     if (eventId) {
       await db.update(bookings)
@@ -136,6 +156,10 @@ export async function updateCalendarEvent(opts: {
   startTime: Date;
   endTime: Date;
   timezone: string;
+  title?: string;
+  guestName?: string;
+  guestEmail?: string;
+  description?: string;
 }): Promise<boolean> {
   const auth = await getAuthedClient(opts.clientId);
   if (!auth) return false;
@@ -155,6 +179,13 @@ export async function updateCalendarEvent(opts: {
           dateTime: opts.endTime.toISOString(),
           timeZone: opts.timezone,
         },
+        ...(opts.title && opts.guestName
+          ? { summary: `${opts.title} — ${opts.guestName}` }
+          : {}),
+        ...(opts.description !== undefined ? { description: opts.description } : {}),
+        ...(opts.guestEmail
+          ? { attendees: [{ email: opts.guestEmail, displayName: opts.guestName }] }
+          : {}),
       },
     });
     return true;
@@ -183,6 +214,11 @@ export async function deleteCalendarEvent(
     });
     return true;
   } catch (err) {
+    const error = err as { code?: number; response?: { status?: number } };
+    const status = error.code ?? error.response?.status;
+    // Deleting an already-removed event is an idempotent success: the desired
+    // external state (no calendar event) already holds.
+    if (status === 404 || status === 410) return true;
     console.error('Failed to delete Google Calendar event:', err);
     return false;
   }

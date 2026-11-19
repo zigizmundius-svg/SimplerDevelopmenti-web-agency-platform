@@ -28,6 +28,10 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => ({
+    site: { id: siteId, clientId: 1 }, client: { id: 1 }, userId: 1, role: 'owner',
+  }),
+  isAuthError: (value: unknown) => Boolean(value && typeof value === 'object' && 'response' in value),
   hasServiceAccess: vi.fn().mockResolvedValue(true),
 }));
 

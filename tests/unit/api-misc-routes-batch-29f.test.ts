@@ -24,6 +24,12 @@ vi.mock('@/lib/portal-client', () => ({
   resolveClientSite: (...args: unknown[]) => resolveClientSiteMock(...args),
 }));
 
+const authorizePortalSiteMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: (...args: unknown[]) => authorizePortalSiteMock(...args),
+  isAuthError: (result: unknown) => Boolean(result && typeof result === 'object' && 'response' in result),
+}));
+
 // drizzle-orm — stub operators to plain objects (we don't introspect them)
 vi.mock('drizzle-orm', () => ({
   eq: (a: unknown, b: unknown) => ({ op: 'eq', a, b }),
@@ -232,6 +238,11 @@ beforeEach(() => {
   authMock.mockReset();
   getPortalClientMock.mockReset();
   resolveClientSiteMock.mockReset();
+  authorizePortalSiteMock.mockReset();
+  authorizePortalSiteMock.mockResolvedValue({
+    site: { id: 1, clientId: 33, customCss: '', customJs: '', draftCustomCss: null, draftCustomJs: null, draftUpdatedAt: null, draftUpdatedBy: null },
+    client: { id: 33 }, userId: 7, role: 'owner',
+  });
 });
 
 // ===========================================================================
@@ -240,6 +251,7 @@ beforeEach(() => {
 
 describe('PUT /api/portal/cms/websites/[siteId]/categories/[id]', () => {
   it('returns 401 when no session', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response('Unauthorized', { status: 401 }) });
     authMock.mockResolvedValue(null);
     const res = await categoriesIdRoute.PUT(
       makeJsonRequest('http://x/api/portal/cms/websites/1/categories/2', 'PUT', { name: 'A' }),
@@ -382,6 +394,7 @@ describe('DELETE /api/portal/cms/websites/[siteId]/categories/[id]', () => {
 
 describe('GET /api/portal/cms/websites/[siteId]/code', () => {
   it('returns 401 when no session', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response('Unauthorized', { status: 401 }) });
     authMock.mockResolvedValue(null);
     const res = await siteCodeRoute.GET(
       new Request('http://x/api/portal/cms/websites/1/code'),
@@ -391,6 +404,7 @@ describe('GET /api/portal/cms/websites/[siteId]/code', () => {
   });
 
   it('returns 401 when no client', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response('Unauthorized', { status: 401 }) });
     authMock.mockResolvedValue(STAFF_SESSION);
     getPortalClientMock.mockResolvedValue(null);
     const res = await siteCodeRoute.GET(
@@ -401,6 +415,7 @@ describe('GET /api/portal/cms/websites/[siteId]/code', () => {
   });
 
   it('returns 401 when site lookup is empty', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response('Not found', { status: 401 }) });
     authMock.mockResolvedValue(STAFF_SESSION);
     getPortalClientMock.mockResolvedValue({ id: 33 });
     selectQueue.push([]); // site not found
@@ -414,11 +429,10 @@ describe('GET /api/portal/cms/websites/[siteId]/code', () => {
   it('returns the existing css/js for an owned site', async () => {
     authMock.mockResolvedValue(STAFF_SESSION);
     getPortalClientMock.mockResolvedValue({ id: 33 });
-    selectQueue.push([{
-      id: 1, customCss: 'body{}', customJs: 'noop()',
-      draftCustomCss: null, draftCustomJs: null,
-      draftUpdatedAt: null, draftUpdatedBy: null,
-    }]);
+    authorizePortalSiteMock.mockResolvedValueOnce({
+      site: { id: 1, clientId: 33, customCss: 'body{}', customJs: 'noop()', draftCustomCss: null, draftCustomJs: null, draftUpdatedAt: null, draftUpdatedBy: null },
+      client: { id: 33 }, userId: 7, role: 'owner',
+    });
     const res = await siteCodeRoute.GET(
       new Request('http://x/api/portal/cms/websites/1/code'),
       makeSiteIdOnlyParams('1'),
@@ -433,11 +447,10 @@ describe('GET /api/portal/cms/websites/[siteId]/code', () => {
   it('coalesces null css/js to empty strings', async () => {
     authMock.mockResolvedValue(STAFF_SESSION);
     getPortalClientMock.mockResolvedValue({ id: 33 });
-    selectQueue.push([{
-      id: 1, customCss: null, customJs: null,
-      draftCustomCss: null, draftCustomJs: null,
-      draftUpdatedAt: null, draftUpdatedBy: null,
-    }]);
+    authorizePortalSiteMock.mockResolvedValueOnce({
+      site: { id: 1, clientId: 33, customCss: null, customJs: null, draftCustomCss: null, draftCustomJs: null, draftUpdatedAt: null, draftUpdatedBy: null },
+      client: { id: 33 }, userId: 7, role: 'owner',
+    });
     const res = await siteCodeRoute.GET(
       new Request('http://x/api/portal/cms/websites/1/code'),
       makeSiteIdOnlyParams('1'),
@@ -450,6 +463,7 @@ describe('GET /api/portal/cms/websites/[siteId]/code', () => {
 
 describe('PUT /api/portal/cms/websites/[siteId]/code', () => {
   it('returns 401 when site verification fails', async () => {
+    authorizePortalSiteMock.mockResolvedValueOnce({ response: new Response('Unauthorized', { status: 401 }) });
     authMock.mockResolvedValue(null);
     const res = await siteCodeRoute.PUT(
       makeJsonRequest('http://x/api/portal/cms/websites/1/code', 'PUT', { customCss: 'x' }),
@@ -461,7 +475,9 @@ describe('PUT /api/portal/cms/websites/[siteId]/code', () => {
   it('updates css/js when provided (stored in draft columns)', async () => {
     authMock.mockResolvedValue(STAFF_SESSION);
     getPortalClientMock.mockResolvedValue({ id: 33 });
-    selectQueue.push([{ id: 1 }]); // verify
+    authorizePortalSiteMock.mockResolvedValueOnce({
+      site: { id: 1, clientId: 33, customCss: '', customJs: '' }, client: { id: 33 }, userId: 7, role: 'owner',
+    });
     updateReturnQueue.push([{
       customCss: '', customJs: '',
       draftCustomCss: 'body{}', draftCustomJs: 'noop()',

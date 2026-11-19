@@ -106,6 +106,7 @@ interface DbMock {
   insert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
 }
 
 const chain: Record<string, unknown> = {};
@@ -121,6 +122,7 @@ function resetChain() {
     orderBy: passthrough,
     limit: passthrough,
     returning: vi.fn(async () => []),
+    for: passthrough,
   });
 }
 
@@ -129,6 +131,7 @@ const dbMock: DbMock = {
   insert: vi.fn(() => chain),
   update: vi.fn(() => chain),
   delete: vi.fn(() => chain),
+  transaction: vi.fn(async (callback: (tx: DbMock) => unknown) => callback(dbMock)),
 };
 
 vi.mock('@/lib/db', () => ({ db: dbMock }));
@@ -184,6 +187,7 @@ function queueSelect(results: unknown[][]) {
       innerJoin: pass,
       orderBy: pass,
       limit: vi.fn(async () => seq.shift() ?? []),
+      for: pass,
     });
     return localChain;
   });

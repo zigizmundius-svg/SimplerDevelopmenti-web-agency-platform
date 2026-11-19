@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
+import { validatePostTaxonomyRefs } from '@/lib/sites/validate-post-taxonomy-refs';
 import crypto from 'node:crypto';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -26,6 +28,8 @@ export async function GET(
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId, postId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const site = await resolveClientSite(parseInt(session.user.id, 10), parseInt(siteId));
   if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
@@ -60,11 +64,18 @@ export async function PUT(
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId, postId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const site = await resolveClientSite(parseInt(session.user.id, 10), parseInt(siteId));
   if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
   const body = await req.json();
   const { title, slug, postType, excerpt, content, coverImage, published, categoryIds, tagIds, seoTitle, seoDescription, ogImage, noIndex, canonicalUrl, customCss, customJs, revisionTrigger, scheduledPublishAt } = body;
+
+  const taxonomyRefs = await validatePostTaxonomyRefs(site.id, categoryIds, tagIds);
+  if (!taxonomyRefs.valid) {
+    return NextResponse.json({ success: false, message: taxonomyRefs.message }, { status: 400 });
+  }
 
   // Gate raw-HTML / raw-script block types to admin/editor staff only.
   if (content !== undefined) {
@@ -174,7 +185,7 @@ export async function PUT(
   // churn join rows even when nothing changed. Diff against the current set
   // and only touch rows that actually moved.
   if (categoryIds !== undefined) {
-    const incoming = new Set<number>((categoryIds as number[]) ?? []);
+    const incoming = new Set<number>(taxonomyRefs.categoryIds);
     const existingRows = await db
       .select({ categoryId: postCategories.categoryId })
       .from(postCategories)
@@ -196,7 +207,7 @@ export async function PUT(
 
   // Same diff strategy for tags.
   if (tagIds !== undefined) {
-    const incoming = new Set<number>((tagIds as number[]) ?? []);
+    const incoming = new Set<number>(taxonomyRefs.tagIds);
     const existingRows = await db
       .select({ tagId: postTags.tagId })
       .from(postTags)
@@ -234,6 +245,8 @@ export async function DELETE(
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
   const { siteId, postId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const site = await resolveClientSite(parseInt(session.user.id, 10), parseInt(siteId));
   if (!site) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 

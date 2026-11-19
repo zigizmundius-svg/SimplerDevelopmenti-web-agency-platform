@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { withCronHealth } from '@/lib/cron-health';
 import { isAuthorizedCron } from '@/lib/cron-auth';
-import { and, eq, gt, isNull, lt } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { bookings, bookingPages } from '@/lib/db/schema';
-import { sendBookingReminder, loadBookingBrand } from '@/lib/email/booking-emails';
+import { sendBookingReminder } from '@/lib/email/booking-reminder';
+import { loadBookingBrand } from '@/lib/email/booking-emails';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,40 +20,25 @@ export const runtime = 'nodejs';
  *   AND status = 'confirmed'
  *
  * The window is wide on purpose so that even if the cron runs hourly, we
- * never miss a reminder. The de-dupe is enforced by the `reminder_sent_at`
- * column + the partial index on (start_time) WHERE reminder_sent_at IS NULL
- * defined in drizzle/0113_booking_reminder_sent_at.sql.
+ * never miss a reminder. The candidate scan uses the partial index on
+ * (start_time) for confirmed bookings that have not yet been reminded.
  *
- * Idempotency: stamp `reminder_sent_at` AFTER a successful send. If Resend
- * throws, we keep `reminder_sent_at` NULL and the next cron tick retries —
- * up to and including the booking start time. The 24h-window cap means we
- * won't keep retrying for days on a permanently-broken send.
+ * Concurrency: each candidate is atomically claimed before sending. The
+ * claim expires after 30 minutes so a crashed worker can be recovered by the
+ * next cron tick. Successful sends stamp reminder_sent_at and clear the claim;
+ * failures clear the claim immediately for retry.
  *
- * Auth: Vercel cron header OR `Authorization: Bearer ${CRON_SECRET}`.
+ * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  *
- * Schedule: every 60 minutes. (Vercel cron config lives outside this PR —
- * add `/api/cron/booking-reminders` with `0 * * * *` once this lands.)
+ * Schedule: every 60 minutes via `vercel.json`. Self-hosted deployments must
+ * register the same route in their external scheduler.
  */
 
 const REMINDER_LEAD_HOURS_MIN = 23; // skip reminders for bookings starting in <23h
 const REMINDER_LEAD_HOURS_MAX = 25; // pick up bookings starting in 23–25h
 const MS_PER_HOUR = 60 * 60 * 1000;
+const REMINDER_CLAIM_LEASE_MS = 30 * 60 * 1000;
 
-interface ReminderCandidate {
-  bookingId: number;
-  clientId: number;
-  bookingPageId: number;
-  guestName: string;
-  guestEmail: string;
-  startTime: Date;
-  endTime: Date;
-  timezone: string;
-  cancelToken: string;
-  meetingLink: string | null;
-  pageTitle: string;
-  pageSlug: string;
-  duration: number;
-}
 
 async function _GET(req: Request) {
   if (!isAuthorizedCron(req)) {
@@ -64,24 +50,11 @@ async function _GET(req: Request) {
   const windowMin = new Date(now.getTime() + REMINDER_LEAD_HOURS_MIN * MS_PER_HOUR);
   const windowMax = new Date(now.getTime() + REMINDER_LEAD_HOURS_MAX * MS_PER_HOUR);
 
+  // Only read candidate IDs here. A worker must win the database claim
+  // before loading guest data or attempting delivery.
   const candidates = await db
-    .select({
-      bookingId: bookings.id,
-      clientId: bookings.clientId,
-      bookingPageId: bookings.bookingPageId,
-      guestName: bookings.guestName,
-      guestEmail: bookings.guestEmail,
-      startTime: bookings.startTime,
-      endTime: bookings.endTime,
-      timezone: bookings.timezone,
-      cancelToken: bookings.cancelToken,
-      meetingLink: bookings.meetingLink,
-      pageTitle: bookingPages.title,
-      pageSlug: bookingPages.slug,
-      duration: bookingPages.duration,
-    })
+    .select({ bookingId: bookings.id })
     .from(bookings)
-    .innerJoin(bookingPages, eq(bookings.bookingPageId, bookingPages.id))
     .where(
       and(
         eq(bookings.status, 'confirmed'),
@@ -93,9 +66,78 @@ async function _GET(req: Request) {
 
   let sent = 0;
   let failed = 0;
+  let claimedCount = 0;
 
-  for (const c of candidates as ReminderCandidate[]) {
+  for (const candidate of candidates) {
+    const claimAt = new Date();
+    const staleClaimBefore = new Date(claimAt.getTime() - REMINDER_CLAIM_LEASE_MS);
+
+    // This conditional UPDATE is the concurrency gate. PostgreSQL rechecks
+    // the predicate after waiting on a row lock, so only one cron worker can
+    // transition a booking from unclaimed/stale to claimed.
+    const claimed = await db
+      .update(bookings)
+      .set({ reminderClaimedAt: claimAt })
+      .where(
+        and(
+          eq(bookings.id, candidate.bookingId),
+          eq(bookings.status, 'confirmed'),
+          isNull(bookings.reminderSentAt),
+          or(
+            isNull(bookings.reminderClaimedAt),
+            lt(bookings.reminderClaimedAt, staleClaimBefore),
+          ),
+          gt(bookings.startTime, windowMin),
+          lt(bookings.startTime, windowMax),
+        ),
+      )
+      .returning({ id: bookings.id });
+
+    if (claimed.length === 0) continue;
+    claimedCount++;
+
     try {
+      // Re-read after claiming so the email uses the latest booking details.
+      const [c] = await db
+        .select({
+          bookingId: bookings.id,
+          clientId: bookings.clientId,
+          bookingPageId: bookings.bookingPageId,
+          guestName: bookings.guestName,
+          guestEmail: bookings.guestEmail,
+          startTime: bookings.startTime,
+          endTime: bookings.endTime,
+          timezone: bookings.timezone,
+          cancelToken: bookings.cancelToken,
+          meetingLink: bookings.meetingLink,
+          pageTitle: bookingPages.title,
+          pageSlug: bookingPages.slug,
+          duration: bookingPages.duration,
+        })
+        .from(bookings)
+        .innerJoin(bookingPages, eq(bookings.bookingPageId, bookingPages.id))
+        .where(
+          and(
+            eq(bookings.id, candidate.bookingId),
+            eq(bookings.status, 'confirmed'),
+            isNull(bookings.reminderSentAt),
+            // Do not start delivery if this worker's lease was reclaimed while
+            // it was loading booking/brand data.
+            eq(bookings.reminderClaimedAt, claimAt),
+            gt(bookings.startTime, windowMin),
+            lt(bookings.startTime, windowMax),
+          ),
+        )
+        .limit(1);
+
+      if (!c) {
+        await db
+          .update(bookings)
+          .set({ reminderClaimedAt: null })
+          .where(and(eq(bookings.id, candidate.bookingId), eq(bookings.reminderClaimedAt, claimAt)));
+        continue;
+      }
+
       const brand = await loadBookingBrand(c.bookingPageId);
       await sendBookingReminder({
         guestName: c.guestName,
@@ -109,16 +151,28 @@ async function _GET(req: Request) {
         duration: c.duration,
         meetingLink: c.meetingLink,
         brand,
-      });
+      }, `booking-reminder/${c.bookingId}`);
+
       await db
         .update(bookings)
-        .set({ reminderSentAt: new Date() })
-        .where(eq(bookings.id, c.bookingId));
+        .set({ reminderSentAt: new Date(), reminderClaimedAt: null })
+        .where(
+          and(
+            eq(bookings.id, c.bookingId),
+            eq(bookings.reminderClaimedAt, claimAt),
+            isNull(bookings.reminderSentAt),
+          ),
+        );
       sent++;
     } catch (err) {
       failed++;
-      console.error(`[booking-reminders] send failed for booking ${c.bookingId}`, err);
-      // Leave reminder_sent_at NULL — the next cron tick will retry.
+      console.error(`[booking-reminders] send failed for booking ${candidate.bookingId}`, err);
+      // Release only our own claim. If the lease was recovered by another
+      // worker, this stale worker must not clear the newer worker's claim.
+      await db
+        .update(bookings)
+        .set({ reminderClaimedAt: null })
+        .where(and(eq(bookings.id, candidate.bookingId), eq(bookings.reminderClaimedAt, claimAt)));
     }
   }
 
@@ -128,6 +182,7 @@ async function _GET(req: Request) {
     success: true,
     data: {
       scanned: candidates.length,
+      claimed: claimedCount,
       sent,
       failed,
       windowMin: windowMin.toISOString(),

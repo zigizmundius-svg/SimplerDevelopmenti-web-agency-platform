@@ -764,7 +764,7 @@ describe('GET /api/cron/surveys-zero-responses (complementary)', () => {
     process.env.CRON_SECRET = ORIGINAL_ENV;
   });
 
-  it('accepts the Vercel cron header when CRON_SECRET is not configured', async () => {
+  it('rejects forged the Vercel cron header when CRON_SECRET is not configured', async () => {
     delete process.env.CRON_SECRET;
     selectQueue.push([]); // candidate query
     const { GET } = await import('@/app/api/cron/surveys-zero-responses/route');
@@ -773,10 +773,7 @@ describe('GET /api/cron/surveys-zero-responses (complementary)', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.scanned).toBe(0);
+    expect(res.status).toBe(401);
   });
 
   it('rejects mismatched bearer token when CRON_SECRET is set', async () => {
@@ -793,7 +790,7 @@ describe('GET /api/cron/surveys-zero-responses (complementary)', () => {
   });
 
   it('processes a mix of skip-dup, skip-no-owner, and notify candidates', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([
       { id: 1, title: 'Alpha', clientId: 100, createdBy: 11, createdAt: new Date() },
       { id: 2, title: 'Beta', clientId: 100, createdBy: null, createdAt: new Date() },
@@ -808,7 +805,7 @@ describe('GET /api/cron/surveys-zero-responses (complementary)', () => {
     const { GET } = await import('@/app/api/cron/surveys-zero-responses/route');
     const res = await GET(
       new Request('http://x/api/cron/surveys-zero-responses', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -833,12 +830,12 @@ describe('GET /api/cron/surveys-zero-responses (complementary)', () => {
   });
 
   it('returns a numeric durationMs field on success', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     selectQueue.push([]);
     const { GET } = await import('@/app/api/cron/surveys-zero-responses/route');
     const res = await GET(
       new Request('http://x/api/cron/surveys-zero-responses', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const body = await res.json();

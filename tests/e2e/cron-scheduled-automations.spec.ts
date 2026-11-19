@@ -7,7 +7,7 @@
  * What is tested:
  *  1. Seed an `automation_rules` row with `next_run_at` = 1 minute in the past
  *     (UTC literal) so it is due regardless of Postgres session timezone.
- *  2. Hit GET /api/cron/process-scheduled-automations with x-vercel-cron: 1.
+ *  2. Hit GET /api/cron/process-scheduled-automations with the CRON_SECRET Bearer token.
  *  3. Assert { success:true, fired >= 1 } and that the seeded rule's
  *     `next_run_at` advanced into the future (CAS worked).
  *  4. Hit a second time — same rule must NOT fire again (idempotency).
@@ -22,7 +22,7 @@
  *  SELECT and CAS predicates — this test validates that the row IS claimed even
  *  when the seed uses an explicit UTC literal.
  *
- * Auth: the endpoint accepts `x-vercel-cron: 1` without CRON_SECRET.
+ * Auth: the endpoint requires `Authorization: Bearer ${CRON_SECRET}`; the Vercel marker is ignored.
  */
 
 import { test, expect } from '@playwright/test';
@@ -31,6 +31,12 @@ import { execSync } from 'node:child_process';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://postgres@localhost:5432/simplerdev_test';
+
+function cronHeaders() {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) throw new Error('CRON_SECRET is required for authenticated cron requests');
+  return { Authorization: `Bearer ${secret}` };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal DB helpers via psql child_process — avoids importing the Drizzle
@@ -143,13 +149,14 @@ test.describe('Cron: process-scheduled-automations @cron @automations', () => {
   });
 
   test('claims a due automation rule and advances nextRunAt (CAS + TZ-safe)', async ({ request }) => {
+    test.skip(!process.env.CRON_SECRET, 'CRON_SECRET not set — skipping authenticated cron test');
     seed = seedDueRule(ts);
     const { ruleId } = seed;
 
     // ── First tick: should claim our due rule ─────────────────────────────
     const res = await request.get(
       `${BASE_URL}/api/cron/process-scheduled-automations`,
-      { headers: { 'x-vercel-cron': '1' } },
+      { headers: cronHeaders() },
     );
     expect(res.status()).toBe(200);
 
@@ -192,7 +199,7 @@ test.describe('Cron: process-scheduled-automations @cron @automations', () => {
     // ── Second tick: same rule must NOT fire again (CAS idempotency) ──────
     const res2 = await request.get(
       `${BASE_URL}/api/cron/process-scheduled-automations`,
-      { headers: { 'x-vercel-cron': '1' } },
+      { headers: cronHeaders() },
     );
     expect(res2.status()).toBe(200);
 
@@ -219,17 +226,22 @@ test.describe('Cron: process-scheduled-automations @cron @automations', () => {
 
   test('auth: rejects request with no credentials', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/cron/process-scheduled-automations`);
-    // Without CRON_SECRET set AND without x-vercel-cron, should 401.
-    // If CRON_SECRET is unset and env is lenient, the body still has a
-    // boolean success field — assert shape either way.
-    const body = await res.json() as { success: boolean };
-    expect(typeof body.success).toBe('boolean');
+    expect(res.status()).toBe(401);
   });
 
-  test('auth: accepts x-vercel-cron header and returns the { success, scanned, fired, skipped, errors } shape', async ({ request }) => {
+  test('auth: rejects a forged x-vercel-cron marker', async ({ request }) => {
     const res = await request.get(
       `${BASE_URL}/api/cron/process-scheduled-automations`,
       { headers: { 'x-vercel-cron': '1' } },
+    );
+    expect(res.status()).toBe(401);
+  });
+
+  test('auth: accepts the CRON_SECRET bearer token and returns the response shape', async ({ request }) => {
+    test.skip(!process.env.CRON_SECRET, 'CRON_SECRET not set — skipping authenticated cron assertion');
+    const res = await request.get(
+      `${BASE_URL}/api/cron/process-scheduled-automations`,
+      { headers: cronHeaders() },
     );
     expect(res.status()).toBe(200);
 

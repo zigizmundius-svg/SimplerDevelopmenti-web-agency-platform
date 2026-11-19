@@ -341,12 +341,13 @@ describe('GET /api/cron/process-embeddings', () => {
     expect(res.status).toBe(401);
   });
 
-  it('drains the queue when authorized via x-vercel-cron header', async () => {
+  it('drains the queue when authorized via valid bearer token', async () => {
+    process.env.CRON_SECRET = 'shh';
     drainQueueMock.mockResolvedValue({ processed: 5, failed: 1 });
     getQueueStatsMock.mockResolvedValue({ pending: 0, failed: 1 });
     const res = await processEmbeddingsRoute.GET(
       makeReq('http://x/api/cron/process-embeddings', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -360,11 +361,12 @@ describe('GET /api/cron/process-embeddings', () => {
   });
 
   it('honors ?batch= and clamps to a max of 100', async () => {
+    process.env.CRON_SECRET = 'shh';
     drainQueueMock.mockResolvedValue({ processed: 0, failed: 0 });
     getQueueStatsMock.mockResolvedValue({ pending: 0, failed: 0 });
     const res = await processEmbeddingsRoute.GET(
       makeReq('http://x/api/cron/process-embeddings?batch=500', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -372,11 +374,12 @@ describe('GET /api/cron/process-embeddings', () => {
   });
 
   it('clamps ?batch=0 to a minimum of 1', async () => {
+    process.env.CRON_SECRET = 'shh';
     drainQueueMock.mockResolvedValue({ processed: 0, failed: 0 });
     getQueueStatsMock.mockResolvedValue({ pending: 0, failed: 0 });
     const res = await processEmbeddingsRoute.GET(
       makeReq('http://x/api/cron/process-embeddings?batch=0', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

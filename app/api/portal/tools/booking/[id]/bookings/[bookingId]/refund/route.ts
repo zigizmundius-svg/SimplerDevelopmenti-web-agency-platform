@@ -5,6 +5,8 @@ import { bookingPages, bookings } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getPortalClient } from '@/lib/portal-client';
 import { authorizePortal, isAuthError } from '@/lib/portal-auth';
+import { updateBookingRecord } from '@/lib/booking/service';
+import { publishBookingCancelled } from '@/lib/booking/post-create';
 
 export async function POST(
   req: Request,
@@ -34,8 +36,20 @@ export async function POST(
     return NextResponse.json({ success: false, message: 'This booking has no payment to refund' }, { status: 400 });
   }
 
-  const body = await req.json();
-  const { amount } = body; // optional partial refund amount in cents
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ success: false, message: 'Invalid refund request' }, { status: 400 });
+  }
+  const amount = (body as { amount?: unknown }).amount; // optional partial refund amount in cents
+  const hasAmount = amount !== undefined && amount !== null;
+  if (hasAmount && (
+    typeof amount !== 'number'
+    || !Number.isSafeInteger(amount)
+    || amount <= 0
+    || amount > booking.total
+  )) {
+    return NextResponse.json({ success: false, message: 'Refund amount must be a positive whole number of cents not exceeding the booking total' }, { status: 400 });
+  }
 
   try {
     const Stripe = (await import('stripe')).default;
@@ -45,22 +59,25 @@ export async function POST(
       payment_intent: booking.stripePaymentIntentId,
     };
 
-    if (amount && amount > 0 && amount < booking.total) {
-      refundParams.amount = amount; // partial refund
-    }
+    // Omit amount for a full refund; Stripe interprets that as refunding the full charge.
+    const isFullRefund = !hasAmount || amount === booking.total;
+    if (hasAmount && !isFullRefund) refundParams.amount = amount as number;
 
     const refund = await stripe.refunds.create(refundParams);
 
-    const isFullRefund = !amount || amount >= booking.total;
+    // The schema has no partial-refund state. Keep partial refunds as paid;
+    // only a full refund cancels the booking and changes paymentStatus.
 
-    await db.update(bookings)
-      .set({
-        paymentStatus: 'refunded',
-        status: isFullRefund ? 'cancelled' : booking.status,
-        cancelledAt: isFullRefund ? new Date() : booking.cancelledAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(bookings.id, booking.id));
+    const updated = await updateBookingRecord({
+      bookingId: booking.id,
+      pageId: page.id,
+      paymentStatus: isFullRefund ? 'refunded' : 'paid',
+      status: isFullRefund ? 'cancelled' : undefined,
+      actor: { actorType: 'user', actorId: Number.parseInt(session.user.id, 10) || null, source: 'portal' },
+    });
+    if (isFullRefund && booking.status !== 'cancelled') {
+      await publishBookingCancelled({ page, booking: updated });
+    }
 
     return NextResponse.json({
       success: true,

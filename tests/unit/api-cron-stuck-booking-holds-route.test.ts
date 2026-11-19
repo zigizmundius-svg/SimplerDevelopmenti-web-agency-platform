@@ -85,7 +85,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
     expect(res.status).toBe(401);
   });
 
-  it('accepts the Vercel cron header without bearer token', async () => {
+  it('rejects forged the Vercel cron header without bearer token', async () => {
     process.env.CRON_SECRET = 'shh';
     queue.push([]); // candidate query: no stuck holds
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
@@ -94,27 +94,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
         headers: { 'x-vercel-cron': '1' },
       }),
     );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      success: boolean;
-      data: {
-        scanned: number;
-        matched: number;
-        notified: number;
-        skippedDup: number;
-        durationMs: number;
-        mode: string;
-      };
-    };
-    expect(json.success).toBe(true);
-    expect(json.data).toMatchObject({
-      scanned: 0,
-      matched: 0,
-      notified: 0,
-      skippedDup: 0,
-      mode: 'preview',
-    });
-    expect(typeof json.data.durationMs).toBe('number');
+    expect(res.status).toBe(401);
   });
 
   it('accepts a matching bearer token', async () => {
@@ -130,7 +110,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
   });
 
   it('skips when a recent dedupe notification exists', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const created = new Date(Date.now() - 30 * 60 * 60 * 1000); // 30h old
     queue.push([
       {
@@ -155,7 +135,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
     const res = await GET(
       new Request('http://x/api/cron/stuck-booking-holds', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -172,7 +152,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
   });
 
   it('files a notification with the documented payload shape when no dup exists', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const created = new Date(Date.now() - 30 * 60 * 60 * 1000); // 30h old
     queue.push([
       {
@@ -197,7 +177,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
     const res = await GET(
       new Request('http://x/api/cron/stuck-booking-holds', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -245,7 +225,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
   });
 
   it('falls back to clients.userId when pageOwnerUserId is null', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const created = new Date(Date.now() - 48 * 60 * 60 * 1000);
     queue.push([
       {
@@ -270,7 +250,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
     const res = await GET(
       new Request('http://x/api/cron/stuck-booking-holds', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -298,7 +278,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
   });
 
   it('skips a candidate with no resolvable recipient', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     queue.push([
       {
         bookingId: 300,
@@ -322,7 +302,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
     const res = await GET(
       new Request('http://x/api/cron/stuck-booking-holds', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -339,7 +319,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
   });
 
   it('handles multiple candidates with mixed outcomes', async () => {
-    delete process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'shh';
     const created = new Date(Date.now() - 26 * 60 * 60 * 1000);
     queue.push([
       {
@@ -381,7 +361,7 @@ describe('GET /api/cron/stuck-booking-holds', () => {
     const { GET } = await import('@/app/api/cron/stuck-booking-holds/route');
     const res = await GET(
       new Request('http://x/api/cron/stuck-booking-holds', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { blockTemplates, type BlockTemplateDraft } from '@/lib/db/schema';
@@ -50,6 +51,8 @@ export async function GET(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const gateResult = await gate(siteId);
   if ('response' in gateResult) return gateResult.response;
   const { clientId } = gateResult;
@@ -105,6 +108,8 @@ export async function POST(
   { params }: { params: Promise<{ siteId: string }> },
 ) {
   const { siteId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const gateResult = await gate(siteId);
   if ('response' in gateResult) return gateResult.response;
   const { userId, clientId } = gateResult;

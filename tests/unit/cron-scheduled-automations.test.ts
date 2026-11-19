@@ -130,13 +130,13 @@ describe('GET /api/cron/process-scheduled-automations', { timeout: TEST_TIMEOUT_
     expect(json.success).toBe(false);
   });
 
-  it('accepts the Vercel cron header and returns empty counters for an empty queue', async () => {
+  it('accepts the valid bearer token and returns empty counters for an empty queue', async () => {
     process.env.CRON_SECRET = 'shh';
     selectQueue.push([]); // no due rules
     const { GET } = await import('@/app/api/cron/process-scheduled-automations/route');
     const res = await GET(
       new Request('http://x/api/cron/process-scheduled-automations', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -187,7 +187,7 @@ describe('GET /api/cron/process-scheduled-automations', { timeout: TEST_TIMEOUT_
     const { GET } = await import('@/app/api/cron/process-scheduled-automations/route');
     const res = await GET(
       new Request('http://x/api/cron/process-scheduled-automations', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -220,7 +220,7 @@ describe('GET /api/cron/process-scheduled-automations', { timeout: TEST_TIMEOUT_
     const { GET } = await import('@/app/api/cron/process-scheduled-automations/route');
     const res = await GET(
       new Request('http://x/api/cron/process-scheduled-automations', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -279,7 +279,7 @@ describe('GET /api/cron/process-scheduled-automations', { timeout: TEST_TIMEOUT_
     const { GET } = await import('@/app/api/cron/process-scheduled-automations/route');
     const res = await GET(
       new Request('http://x/api/cron/process-scheduled-automations', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -325,7 +325,7 @@ describe('GET /api/cron/process-scheduled-automations', { timeout: TEST_TIMEOUT_
     const { GET } = await import('@/app/api/cron/process-scheduled-automations/route');
     const res = await GET(
       new Request('http://x/api/cron/process-scheduled-automations', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -360,7 +360,7 @@ describe('GET /api/cron/process-scheduled-automations', { timeout: TEST_TIMEOUT_
     const { GET } = await import('@/app/api/cron/process-scheduled-automations/route');
     const res = await GET(
       new Request('http://x/api/cron/process-scheduled-automations', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

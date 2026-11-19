@@ -765,13 +765,13 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     expect(res.status).toBe(401);
   });
 
-  it('accepts the Vercel cron header with no candidates', async () => {
+  it('accepts the valid bearer token with no candidates', async () => {
     process.env.CRON_SECRET = 'shh';
     dbHandlers.selectHandler = () => [];
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -814,7 +814,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -841,7 +841,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = await res.json();
@@ -865,7 +865,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = await res.json();
@@ -896,7 +896,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     const json = await res.json();
@@ -941,7 +941,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -988,7 +988,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);
@@ -1036,7 +1036,7 @@ describe('GET /api/cron/renew-gmail-watches', () => {
     const { GET } = await import('@/app/api/cron/renew-gmail-watches/route');
     const res = await GET(
       new Request('http://x/api/cron/renew-gmail-watches', {
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer shh' },
       }),
     );
     expect(res.status).toBe(200);

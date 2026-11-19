@@ -98,6 +98,7 @@ export function getNavSections(): NavSection[] {
         { href: '/admin/automations', label: 'Automations', icon: 'bolt' },
         { href: '/admin/agent-runs', label: 'Agent Runs', icon: 'network_node' },
         { href: '/admin/system-health', label: 'System Health', icon: 'monitor_heart' },
+        { href: '/admin/internal-jobs', label: 'Background Jobs', icon: 'pending_actions' },
         { href: '/admin/oauth-clients', label: 'OAuth Clients', icon: 'key' },
         ...(process.env.NODE_ENV === 'development'
           ? [{ href: '/admin/agentic-os', label: 'Agentic OS', icon: 'auto_awesome' }]

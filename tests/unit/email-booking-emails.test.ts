@@ -74,13 +74,25 @@ afterEach(() => {
 
 describe('sendGuestConfirmation', () => {
   it('sends a confirmation email with the guest as the recipient', async () => {
-    await sendGuestConfirmation(baseData());
+    await sendGuestConfirmation(baseData(), 'booking-email/confirmation/101/guest/1/1781532000000');
 
     expect(sendMock).toHaveBeenCalledTimes(1);
     const payload = sendMock.mock.calls[0][0];
+    expect(sendMock.mock.calls[0][1]).toEqual({ idempotencyKey: 'booking-email/confirmation/101/guest/1/1781532000000' });
     expect(payload.to).toBe('alice@example.test');
     expect(payload.subject).toBe('Confirmed: Discovery Call');
     expect(payload.from).toMatch(/^Booking Confirmation </);
+  });
+
+  it('creates a deterministic calendar attachment for retried confirmations', async () => {
+    const data = { ...baseData(), bookingId: 101, createdAt: new Date('2026-06-01T10:00:00.000Z') };
+    await sendGuestConfirmation(data, 'booking-email/confirmation/101/guest/1');
+    await sendGuestConfirmation(data, 'booking-email/confirmation/101/guest/1');
+
+    const first = sendMock.mock.calls[0][0].attachments[0].content;
+    const second = sendMock.mock.calls[1][0].attachments[0].content;
+    expect(second).toBe(first);
+    expect(sendMock.mock.calls[1][1]).toEqual({ idempotencyKey: 'booking-email/confirmation/101/guest/1' });
   });
 
   it('renders the page title, duration, and a cancel link in the HTML body', () => {
@@ -170,11 +182,11 @@ describe('sendGuestConfirmation', () => {
     expect(payload.html).toContain('token=cancel-tok-abc');
   });
 
-  it('does not throw when resend.emails.send rejects (logs instead)', async () => {
+  it('rethrows Resend failures so the durable queue can retry', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     sendMock.mockRejectedValueOnce(new Error('SMTP down'));
 
-    await expect(sendGuestConfirmation(baseData())).resolves.toBeUndefined();
+    await expect(sendGuestConfirmation(baseData())).rejects.toThrow('SMTP down');
     expect(errSpy).toHaveBeenCalledWith(
       'Failed to send guest confirmation email:',
       expect.any(Error),
@@ -243,13 +255,13 @@ describe('sendHostNotification', () => {
     expect(decoded).toContain('ATTENDEE;CN=Alice Example;RSVP=TRUE:mailto:alice@example.test');
   });
 
-  it('does not throw when resend rejects (logs instead)', async () => {
+  it('rethrows Resend failures so the durable queue can retry', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     sendMock.mockRejectedValueOnce(new Error('boom'));
 
     await expect(
       sendHostNotification('host@example.test', baseData()),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('boom');
     expect(errSpy).toHaveBeenCalledWith(
       'Failed to send host notification email:',
       expect.any(Error),
@@ -277,9 +289,12 @@ describe('sendCancellationEmail', () => {
       new Date('2026-06-15T14:00:00.000Z'),
       'UTC',
       'discovery-call',
+      undefined,
+      'booking-email/cancellation/101/guest/1',
     );
     expect(sendMock).toHaveBeenCalledTimes(1);
     const payload = sendMock.mock.calls[0][0];
+    expect(sendMock.mock.calls[0][1]).toEqual({ idempotencyKey: 'booking-email/cancellation/101/guest/1' });
     expect(payload.to).toBe('alice@example.test');
     expect(payload.from).toMatch(/^Booking Update </);
     expect(payload.subject).toMatch(/^Cancelled: Discovery Call — /);
@@ -327,7 +342,7 @@ describe('sendCancellationEmail', () => {
         'UTC',
         'discovery-call',
       ),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('nope');
     expect(errSpy).toHaveBeenCalledWith(
       'Failed to send cancellation email:',
       expect.any(Error),

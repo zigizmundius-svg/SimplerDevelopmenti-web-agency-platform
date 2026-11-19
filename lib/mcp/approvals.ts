@@ -55,6 +55,7 @@ import { renderBlocksToEmailHtml } from '@/lib/email';
 import { executeCampaignSend } from '@/lib/email/campaign-send';
 import { publishEntityFromDb } from '@/lib/realtime/internal-publisher';
 import { slugify } from '@/lib/publishing/slug';
+import { publishSiteCustomCode } from '@/lib/sites/publish-custom-code';
 
 /**
  * Per-slide publish helper. Mirrors `publishOneSlide` in
@@ -433,10 +434,11 @@ export async function applyPendingChange(change: typeof mcpPendingChanges.$infer
         patch.draftUpdatedAt = new Date();
         patch.draftUpdatedBy = applierUserId;
         if (payload.customCss !== undefined) {
-          patch.draftCustomCss = payload.customCss === '' ? null : payload.customCss;
+          // Preserve an empty string: publishing it intentionally clears live CSS.
+          patch.draftCustomCss = payload.customCss ?? null;
         }
         if (payload.customJs !== undefined) {
-          patch.draftCustomJs = payload.customJs === '' ? null : payload.customJs;
+          patch.draftCustomJs = payload.customJs || null;
         }
       } else {
         for (const field of [
@@ -451,19 +453,9 @@ export async function applyPendingChange(change: typeof mcpPendingChanges.$infer
     }
     case 'site:publish': {
       const id = (payload.id as number | undefined) ?? change.entityId!;
-      const [existing] = await db.select().from(clientWebsites)
-        .where(and(eq(clientWebsites.id, id), eq(clientWebsites.clientId, clientId))).limit(1);
-      if (!existing) throw new Error('Site not found');
-      const [row] = await db.update(clientWebsites).set({
-        customCss: existing.draftCustomCss,
-        customJs: existing.draftCustomJs,
-        draftCustomCss: null,
-        draftCustomJs: null,
-        draftUpdatedAt: null,
-        draftUpdatedBy: null,
-        updatedAt: new Date(),
-      }).where(eq(clientWebsites.id, id)).returning();
-      return row;
+      // The shared helper locks the tenant-scoped site row while promoting
+      // the draft, so a concurrent save cannot be silently discarded.
+      return publishSiteCustomCode(id, clientId);
     }
 
     // ── SITE NAVIGATION ──────────────────────────────────────────────────

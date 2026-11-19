@@ -293,6 +293,31 @@ describe('POST /api/public/booking/[slug]/book @booking @public', () => {
     expect(second.data?.message).toMatch(/no longer available/i);
   });
 
+  it('serializes simultaneous public requests for the same exclusive slot', async () => {
+    const { slug, pageId } = await seedBookingPage({ price: 0, maxGuests: null });
+    const start = futureSlot(3);
+    const route = await import('@/app/api/public/booking/[slug]/book/route');
+    const payload = { params: { slug }, body: {
+      name: 'Concurrent Guest', email: 'race@test.local', startTime: start.toISOString(),
+    } };
+
+    const results = await Promise.all([
+      callHandler(route as unknown as Record<string, unknown>, 'POST', payload),
+      callHandler(route as unknown as Record<string, unknown>, 'POST', payload),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+
+    const sql = getTestSql();
+    const rows = await sql<{ id: number; status: string }[]>`
+      SELECT id, status
+      FROM ${sql(TEST_SCHEMA)}.bookings
+      WHERE booking_page_id = ${pageId}
+        AND start_time = ${start}
+        AND status <> 'cancelled'
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('confirmed');
+  });
   it('capacity mode: rejects once booked >= maxGuests at that slot', async () => {
     const { slug } = await seedBookingPage({ price: 0, maxGuests: 2 });
     const start = futureSlot(3);

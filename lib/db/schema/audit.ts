@@ -5,6 +5,7 @@ import { pgTable, serial, varchar, text, timestamp, integer, json, boolean, inde
 import { users } from './auth';
 import { clients } from './sites';
 import { agentAuditLogs } from './agenticOs';
+import { bookings } from './tools';
 
 export const oauthClients = pgTable('oauth_clients', {
   id: serial('id').primaryKey(),
@@ -192,3 +193,23 @@ export const agentActionCaptures = pgTable('agent_action_captures', {
 export type AgentActionCapture = typeof agentActionCaptures.$inferSelect;
 export type NewAgentActionCapture = typeof agentActionCaptures.$inferInsert;
 
+/**
+ * Append-only booking mutation history, separate from agent telemetry.
+ * Numeric tenant IDs remain after offboarding; booking links null on deletion.
+ */
+export const bookingAuditLogs = pgTable('booking_audit_logs', {
+  id: serial('id').primaryKey(),
+  clientId: integer('client_id').notNull(),
+  bookingId: integer('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+  actorType: varchar('actor_type', { length: 20 }).notNull(),
+  actorId: integer('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  source: varchar('source', { length: 40 }).notNull(),
+  action: varchar('action', { length: 30 }).notNull(),
+  beforeState: json('before_state').$type<Record<string, unknown> | null>(),
+  afterState: json('after_state').$type<Record<string, unknown> | null>(),
+  requestId: varchar('request_id', { length: 128 }),
+  occurredAt: timestamp('occurred_at').defaultNow().notNull(),
+}, (t) => [
+  index('booking_audit_logs_booking_idx').on(t.bookingId, t.occurredAt),
+  index('booking_audit_logs_client_idx').on(t.clientId, t.occurredAt),
+]);

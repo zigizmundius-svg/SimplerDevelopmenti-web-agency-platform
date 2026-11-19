@@ -27,6 +27,12 @@ vi.mock('@/lib/sites/site-cache', () => ({
 vi.mock('@/lib/auth', () => ({
   auth: () => authMock(),
 }));
+vi.mock('@/lib/portal-auth', () => ({
+  authorizePortalSite: async ({ siteId }: { siteId: number }) => ({
+    site: { id: siteId }, client: { id: 1 }, userId: 1, role: 'owner',
+  }),
+  isAuthError: (value: unknown) => Boolean(value && typeof value === 'object' && 'response' in value),
+}));
 
 const resolveClientSiteMock = vi.fn();
 vi.mock('@/lib/portal-client', () => ({
@@ -90,6 +96,8 @@ const state: State = {
   postCategories: [],
   postTags: [],
   postRevisions: [],
+  categories: [],
+  tags: [],
   nextId: 1000,
 };
 
@@ -103,6 +111,10 @@ function tableArray(name: string): Array<Record<string, unknown>> {
       return state.postTags;
     case 'postRevisions':
       return state.postRevisions;
+    case 'categories':
+      return state.categories;
+    case 'tags':
+      return state.tags;
     default:
       return [];
   }
@@ -111,7 +123,7 @@ function tableArray(name: string): Array<Record<string, unknown>> {
 function evalPredicate(filter: unknown, row: Record<string, unknown>): boolean {
   if (!filter) return true;
   if (typeof filter !== 'object') return true;
-  const f = filter as { op?: string; a?: unknown; b?: unknown; args?: unknown[] };
+  const f = filter as { op?: string; a?: unknown; b?: unknown; args?: unknown[]; list?: unknown[] };
   switch (f.op) {
     case 'eq': {
       const col = f.a as { __col?: string } | undefined;
@@ -120,6 +132,10 @@ function evalPredicate(filter: unknown, row: Record<string, unknown>): boolean {
     }
     case 'and':
       return (f.args ?? []).every((arg) => evalPredicate(arg, row));
+    case 'inArray': {
+      const col = f.a as { __col?: string } | undefined;
+      return Boolean(col?.__col && (f.list ?? []).includes(row[col.__col]));
+    }
     default:
       return true;
   }
@@ -297,7 +313,11 @@ beforeEach(() => {
   state.postCategories.length = 0;
   state.postTags.length = 0;
   state.postRevisions.length = 0;
+  state.categories.length = 0;
+  state.tags.length = 0;
   state.nextId = 1000;
+  state.categories.push(...[1, 2, 3].map((id) => ({ id, websiteId: 50 })));
+  state.tags.push(...[5, 6].map((id) => ({ id, websiteId: 50 })));
 
   authMock.mockReset();
   resolveClientSiteMock.mockReset();

@@ -14,6 +14,7 @@
  * booking_pages.clientId via the page resolver in the calling route.
  */
 import { db } from '@/lib/db';
+import type { BookingQueryDb } from '@/lib/booking/availability';
 import { bookingPages, bookings, bookingAttendees } from '@/lib/db/schema';
 import { and, eq, ne } from 'drizzle-orm';
 
@@ -26,10 +27,12 @@ export async function checkSlotCapacity(
   bookingPageId: number,
   slotStart: Date,
   requestedSeats: number,
+  queryDb: BookingQueryDb = db,
+  excludeBookingId?: number,
 ): Promise<CapacityResult> {
   const seats = Math.max(1, Math.floor(requestedSeats));
 
-  const [page] = await db
+  const [page] = await queryDb
     .select({
       id: bookingPages.id,
       bookingType: bookingPages.bookingType,
@@ -47,7 +50,7 @@ export async function checkSlotCapacity(
     if (capacity <= 0) return { available: false, remaining: 0 };
 
     // Pull non-cancelled attendees across all bookings rows for this slot.
-    const rows = await db
+    const rows = await queryDb
       .select({ status: bookingAttendees.status })
       .from(bookingAttendees)
       .innerJoin(bookings, eq(bookings.id, bookingAttendees.bookingId))
@@ -56,6 +59,7 @@ export async function checkSlotCapacity(
           eq(bookings.bookingPageId, bookingPageId),
           eq(bookings.startTime, slotStart),
           ne(bookings.status, 'cancelled'),
+          ...(excludeBookingId ? [ne(bookings.id, excludeBookingId)] : []),
         ),
       );
 
@@ -71,7 +75,7 @@ export async function checkSlotCapacity(
   }
 
   // Individual: 1 if no booking, else 0.
-  const existing = await db
+  const existing = await queryDb
     .select({ id: bookings.id })
     .from(bookings)
     .where(
@@ -79,6 +83,7 @@ export async function checkSlotCapacity(
         eq(bookings.bookingPageId, bookingPageId),
         eq(bookings.startTime, slotStart),
         ne(bookings.status, 'cancelled'),
+        ...(excludeBookingId ? [ne(bookings.id, excludeBookingId)] : []),
       ),
     )
     .limit(1);

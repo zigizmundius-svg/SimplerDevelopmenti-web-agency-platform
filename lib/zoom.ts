@@ -155,6 +155,49 @@ export async function createZoomMeeting(opts: {
 }
 
 /**
+ * Update the scheduled time of an existing Zoom meeting after a booking
+ * reschedule. Returns false when the link cannot be resolved or Zoom rejects
+ * the update; callers treat this as a best-effort side effect.
+ */
+export async function updateZoomMeeting(opts: {
+  clientId: number;
+  meetingLink: string;
+  startTime: Date;
+  duration: number;
+  timezone: string;
+}): Promise<boolean> {
+  const match = opts.meetingLink.match(/\/j\/(\d+)/);
+  if (!match) return false;
+
+  const accessToken = await getAuthedClient(opts.clientId);
+  if (!accessToken) return false;
+
+  try {
+    const res = await fetch(`${ZOOM_API_BASE}/meetings/${match[1]}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        start_time: opts.startTime.toISOString(),
+        duration: opts.duration,
+        timezone: opts.timezone,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error('Failed to update Zoom meeting:', await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to update Zoom meeting:', err);
+    return false;
+  }
+}
+
+/**
  * Delete a Zoom meeting when a booking is cancelled.
  */
 export async function deleteZoomMeeting(

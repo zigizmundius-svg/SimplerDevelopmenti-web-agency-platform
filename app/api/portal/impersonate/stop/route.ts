@@ -3,8 +3,7 @@ import { cookies } from 'next/headers';
 import { auth } from '@/lib/auth';
 import {
   IMPERSONATE_COOKIE,
-  isStaffRole,
-  readImpersonationCookie,
+  getImpersonatedClientIdFromToken,
 } from '@/lib/impersonation';
 
 /**
@@ -22,15 +21,17 @@ export async function POST(req: Request) {
   const store = await cookies();
   const tokenVal = store.get(IMPERSONATE_COOKIE)?.value;
 
-  // Best-effort: figure out where to redirect (back to the admin client page).
-  // Falls back to /admin if the cookie was missing or unverifiable.
+  // Best-effort: figure out where to redirect (back to the admin client page),
+  // but only trust a cookie minted for this exact staff identity.
   let targetClientId: number | null = null;
-  const payload = readImpersonationCookie(tokenVal);
-  if (payload) targetClientId = payload.clientId;
+  const staffUserId = userId ? Number.parseInt(userId, 10) : Number.NaN;
+  if (Number.isSafeInteger(staffUserId) && staffUserId > 0) {
+    targetClientId = getImpersonatedClientIdFromToken(tokenVal, role, staffUserId);
+  }
 
-  if (userId && isStaffRole(role) && targetClientId != null) {
+  if (targetClientId != null) {
     console.log('[impersonation] stop', {
-      staffUserId: parseInt(userId, 10),
+      staffUserId,
       targetClientId,
       timestamp: new Date().toISOString(),
       action: 'stop',

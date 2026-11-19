@@ -6,8 +6,7 @@ import { clients } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import {
   IMPERSONATE_COOKIE,
-  isStaffRole,
-  readImpersonationCookie,
+  getImpersonatedClientIdFromToken,
 } from '@/lib/impersonation';
 
 /**
@@ -30,18 +29,20 @@ export async function GET() {
     data: { active: false as const },
   });
 
-  // Non-staff users never see impersonation state, even if a cookie is present.
-  if (!userId || !isStaffRole(role)) return inactive;
+  // The banner is only active for the staff identity that minted the cookie.
+  if (!userId) return inactive;
+  const staffUserId = Number.parseInt(userId, 10);
+  if (!Number.isSafeInteger(staffUserId) || staffUserId <= 0) return inactive;
 
   const store = await cookies();
   const tokenVal = store.get(IMPERSONATE_COOKIE)?.value;
-  const payload = readImpersonationCookie(tokenVal);
-  if (!payload) return inactive;
+  const targetClientId = getImpersonatedClientIdFromToken(tokenVal, role, staffUserId);
+  if (targetClientId == null) return inactive;
 
   const [row] = await db
     .select({ id: clients.id, company: clients.company })
     .from(clients)
-    .where(eq(clients.id, payload.clientId))
+    .where(eq(clients.id, targetClientId))
     .limit(1);
 
   if (!row) return inactive;

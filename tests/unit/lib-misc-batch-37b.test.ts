@@ -53,17 +53,26 @@ function makeSelectChain() {
 vi.mock('@/lib/db', () => ({
   db: {
     select: vi.fn(() => makeSelectChain()),
-    insert: vi.fn(() => ({
-      values: vi.fn(async (v: Record<string, unknown>) => {
+    insert: vi.fn((table: { __table?: string }) => ({
+      values: vi.fn((v: Record<string, unknown>) => {
         dbMockState.insertRows.push(v);
-        return undefined;
+        const result: Record<string, unknown> = {
+          returning: vi.fn(async () => [{ id: 901 }]),
+          then: (onF: (value: unknown) => unknown, onR?: (error: unknown) => unknown) =>
+            Promise.resolve(undefined).then(onF, onR),
+        };
+        return result;
       }),
     })),
-    update: vi.fn(() => ({
+    update: vi.fn((table: { __table?: string }) => ({
       set: vi.fn((patch: Record<string, unknown>) => {
-        dbMockState.updateRows.push(patch);
+        dbMockState.updateRows.push({ table: table.__table, ...patch });
         return {
-          where: vi.fn(async () => undefined),
+          where: vi.fn(() => ({
+            returning: vi.fn(async () => [{ id: 901 }]),
+            then: (onF: (value: unknown) => unknown, onR?: (error: unknown) => unknown) =>
+              Promise.resolve(undefined).then(onF, onR),
+          })),
         };
       }),
     })),
@@ -266,7 +275,7 @@ describe('lib/automation/engine.ts', () => {
     // bus also writes an automation_jobs journal row.
     expect(automationLogRows()).toHaveLength(1);
     expect(automationLogRows()[0]).toMatchObject({ status: 'success', ruleId: 7 });
-    expect(dbMockState.updateRows).toHaveLength(1);
+    expect(dbMockState.updateRows.filter((row) => row.table === 'automationRules')).toHaveLength(1);
   });
 
   it('processEvent records "failed" status when the only action throws', async () => {

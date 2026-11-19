@@ -9,8 +9,7 @@ export const runtime = 'nodejs';
 /**
  * Cron endpoint: expire stale MCP pending changes.
  *
- * Auth: requires `Authorization: Bearer ${CRON_SECRET}` or Vercel's standard
- * cron header. Anyone else gets 401.
+ * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  *
  * Suggested schedule: daily at 03:17 UTC via vercel.json.
  */

@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { getPortalClient } from '@/lib/portal-client';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { db } from '@/lib/db';
 import { clientWebsites } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { provisionWebsite } from '@/lib/website-provisioner';
 import { generateUniqueSubdomain } from '@/lib/subdomain';
 
@@ -11,33 +10,24 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ siteId: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-
-  const userId = parseInt(session.user.id, 10);
-  const client = await getPortalClient(userId);
-  if (!client) return NextResponse.json({ success: false, message: 'Client not found' }, { status: 404 });
-
   const { siteId } = await params;
-  const [site] = await db
-    .select()
-    .from(clientWebsites)
-    .where(and(eq(clientWebsites.id, parseInt(siteId)), eq(clientWebsites.clientId, client.id)))
-    .limit(1);
+  const authorized = await authorizePortalSite({
+    siteId: parseInt(siteId, 10),
+    action: 'admin',
+    observeRole: false,
+  });
+  if (isAuthError(authorized)) return authorized.response;
 
-  if (!site) return NextResponse.json({ success: false, message: 'Website not found' }, { status: 404 });
-
+  const { site, client } = authorized;
   if (site.deploymentStatus === 'provisioning') {
     return NextResponse.json({ success: false, message: 'Provisioning is already in progress.' }, { status: 409 });
   }
 
-  // Allow re-provisioning managed sites (active but no repo) to upgrade to standalone
   const isManaged = site.deploymentStatus === 'active' && !site.githubRepoName && !site.vercelProjectId;
   if (site.deploymentStatus === 'active' && !isManaged) {
     return NextResponse.json({ success: false, message: 'Website is already provisioned.' }, { status: 409 });
   }
 
-  // Auto-generate subdomain if missing (for websites created before this feature)
   let subdomain = site.subdomain;
   if (!subdomain) {
     subdomain = await generateUniqueSubdomain(client.company || 'site', site.name);
@@ -46,7 +36,6 @@ export async function POST(
       .where(eq(clientWebsites.id, site.id));
   }
 
-  // Fire and forget — provisioning updates DB status as it progresses
   provisionWebsite(site.id, subdomain, site.description || site.name).catch(() => {
     // Error already persisted to DB by provisionWebsite
   });

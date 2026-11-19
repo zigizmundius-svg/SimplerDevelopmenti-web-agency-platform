@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { authorizePortalSite, isAuthError } from '@/lib/portal-auth';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientWebsites, postTypes, customFields } from '@/lib/db/schema';
@@ -45,6 +46,8 @@ async function verifyTypeAccess(siteIdRaw: string, typeIdRaw: string) {
 // Sorted by `order` so the UI can render in the author's intended sequence.
 export async function GET(_req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'read', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
@@ -62,6 +65,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ siteId:
 // API misuse.
 export async function POST(req: Request, { params }: { params: Promise<{ siteId: string; typeId: string }> }) {
   const { siteId, typeId } = await params;
+  const authorization = await authorizePortalSite({ siteId: Number.parseInt(siteId, 10), action: 'write', observeRole: false });
+  if (isAuthError(authorization)) return authorization.response;
   const ctx = await verifyTypeAccess(siteId, typeId);
   if (!ctx) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 

@@ -31,7 +31,7 @@ export const runtime = 'nodejs';
  *   attempt 2 → status='failed', nextRetryAt = now + 5 min
  *   attempt 3 → status='dead_letter', parent run status='failed'
  *
- * Auth: Vercel cron header OR `Authorization: Bearer ${CRON_SECRET}`.
+ * Auth: requires `Authorization: Bearer ${CRON_SECRET}`; `x-vercel-cron` is ignored.
  */
 async function _GET(req: Request) {
   if (!isAuthorizedCron(req)) {

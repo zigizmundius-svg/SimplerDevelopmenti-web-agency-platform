@@ -186,6 +186,11 @@ export default function EditBookingPage({ params }: { params: Promise<{ id: stri
 
       {activeTab === 'bookings' && (
         <BookingsPanel
+          pageId={id}
+          timezone={state.timezone}
+          bookingType={state.bookingType}
+          price={state.price}
+          onRefresh={state.refreshBookings}
           bookingsList={state.bookingsList}
           pageMembers={state.pageMembers}
           onCancel={state.cancelBooking}
