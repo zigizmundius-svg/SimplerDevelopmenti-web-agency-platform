@@ -98,3 +98,35 @@ A focused source review of the portal CRM CSV routes found two issues:
 - Unit tests were updated to mock the shared authorizer and cover unauthorized/denied import, missing export entitlement, and spreadsheet formula neutralization.
 
 These changes are committed but must still pass the new head's GitHub Actions checks. They are source-level changes; no local test execution was possible in this environment. Continue auditing the remaining CRM mutations, booking routes and the wider 875-route API surface for equivalent gaps.
+
+
+## 8. Follow-up verification — CRM and booking routes (2026-11-19)
+
+**Current branch head at review:** `8b865a40259c24493dfceb9080496af32bd3df3b`. The draft PR remains open, unmerged, and in Draft state.
+
+### CRM follow-up
+
+The CRM import/export route changes and corresponding test updates are present on the branch. GitHub Actions run `44067118480` (CI) completed successfully. Its reported jobs include lint/checks, all four unit shards and merged coverage, typecheck, tenancy regression, security E2E, and all three critical E2E shards. Schema drift preflight run `44067118485` reports a successful workflow conclusion, but its guard skipped the database comparison because the production secret was unavailable; this must not be represented as a completed production-schema comparison.
+
+### Booking concurrency review
+
+The shared `createBookingRecord` service uses a PostgreSQL transaction-scoped advisory lock keyed by booking-page ID, then validates capacity/overlap and inserts the booking in the same transaction. Public rescheduling also takes the same page lock, re-reads the booking inside the transaction, validates while excluding the current booking, and writes the update plus audit/automation rows transactionally. Manual portal booking creation and update call the shared service. This is a good serialization design for callers that use these service functions.
+
+The portal booking routes reviewed are tenant-scoped through the selected client and booking-page ownership checks. The calendar query additionally scopes by client ID and that tenant's booking page IDs. The date-override GET/POST/PUT/DELETE routes also resolve the page through the selected tenant before reading or mutating overrides.
+
+### Booking issues still requiring remediation/tests
+
+- The date-override POST and PUT handlers validate only a small subset of fields. They do not consistently validate strict calendar-date format, time format, start-before-end, note type/length, or the complete resulting record on update. Malformed or contradictory overrides may therefore be persisted and later affect availability calculations.
+- The booking-page PUT handler copies many request values directly into the update object. Several settings (duration, buffers, price, notice/advance limits, timezone, availability shape, group capacity, and feature flags) need explicit type/range/shape validation before persistence. This is an admin data-integrity concern, even though the page itself is tenant-scoped.
+- The booking calendar accepts date strings without explicitly rejecting invalid dates or reversed ranges before querying. Add bounded range validation to prevent malformed and unnecessarily large calendar queries.
+- Route-level tests specifically exercising concurrent booking creation, capacity races, date-override validation, invalid page settings, and cross-tenant denial were not located in the paths reviewed. The advisory lock is source-verified, but a deterministic concurrency integration test against PostgreSQL is still required.
+
+### Next actions
+
+1. Add shared validators for date overrides and booking-page settings; reject invalid input with 400 and preserve omitted fields on partial updates.
+2. Add bounded calendar-range validation.
+3. Add PostgreSQL integration tests proving that concurrent creates cannot overbook individual slots or group capacity, and that rescheduling serializes against new bookings.
+4. Add negative tenant/role tests for every booking mutation route.
+5. Re-run CI after those changes. Keep the PR Draft and do not merge/deploy without explicit approval.
+
+**Important:** the current CI green result verifies the tested branch workflows, not production readiness. The production deployment blockers in sections 2–6 remain open.
